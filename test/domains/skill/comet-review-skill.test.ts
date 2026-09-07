@@ -16,6 +16,7 @@ const allowedReadOnlyCommands = new Set([
   'comet state get <change-name> verification_report',
   'comet native show <change-name> --json',
   'comet native status <change-name> --details --json',
+  'pnpm run check:enterprise-guard',
 ]);
 
 function expectReadOnlyCommandContract(source: string, prohibitionMarker: string): void {
@@ -99,6 +100,21 @@ describe('comet-review 中文 Skill', () => {
     expect(source).toContain('未发现具体问题');
   });
 
+  it('接入 Enterprise Guard findings 审计消费与审查指引', async () => {
+    const source = await fs.readFile(zhSkillPath, 'utf8');
+
+    expect(source).toContain('pnpm run check:enterprise-guard');
+    expect(source).toContain('.comet/enterprise-guard/findings.jsonl');
+    expect(source).toContain('.comet/enterprise-guard/exceptions.json');
+    expect(source).toContain('status: blocked');
+    expect(source).toContain('status: warn');
+    expect(source).toContain('status: clear');
+    expect(source).toContain('阻断性审查意见');
+    expect(source).toContain('不可逆 `fingerprint`');
+    expect(source).toContain('审计风险并在结果中记录留痕');
+    expect(source).toContain('CRITICAL');
+  });
+
   it('提供 Codex 显式调用元数据', async () => {
     const metadata = parseYaml(await fs.readFile(zhOpenAiPath, 'utf8')) as {
       interface?: { display_name?: string; short_description?: string };
@@ -148,6 +164,16 @@ describe('comet-review bilingual contract', () => {
     expect(source).toContain('documentation, configuration, and metadata');
     expect(source).toContain('independent of `review_mode`');
     expect(source).toContain('cannot replace `/comet-verify` or Native Verify');
+    expect(source).toContain('pnpm run check:enterprise-guard');
+    expect(source).toContain('.comet/enterprise-guard/findings.jsonl');
+    expect(source).toContain('.comet/enterprise-guard/exceptions.json');
+    expect(source).toContain('status: blocked');
+    expect(source).toContain('status: warn');
+    expect(source).toContain('status: clear');
+    expect(source).toContain('blocking review conclusion');
+    expect(source).toContain('fingerprint');
+    expect(source).toContain('audit trail');
+    expect(source).toContain('CRITICAL');
     expectReadOnlyCommandContract(source, 'Do not run `comet state select`');
   });
 
