@@ -752,7 +752,7 @@ describe('eval command', () => {
       }),
     ).rejects.toThrow(
       `Eval harness is missing at ${packagedEvalCwd}.\n` +
-        'Reinstall @rpamis/comet or pass --project <repository-root>.',
+        'Reinstall @cli-tools/yuan-comet or pass --project <repository-root>.',
     );
 
     expect(execFileSync).not.toHaveBeenCalled();

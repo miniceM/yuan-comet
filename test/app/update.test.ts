@@ -118,7 +118,7 @@ async function writeFakeCometPackage(packageRoot: string, version: string): Prom
   await fs.mkdir(path.join(packageRoot, 'bin'), { recursive: true });
   await fs.writeFile(
     path.join(packageRoot, 'package.json'),
-    JSON.stringify({ name: '@rpamis/comet', version, bin: { comet: 'bin/comet.js' } }),
+    JSON.stringify({ name: '@cli-tools/yuan-comet', version, bin: { comet: 'bin/comet.js' } }),
   );
   await fs.writeFile(path.join(packageRoot, 'bin', 'comet.js'), '#!/usr/bin/env node\n');
 }
@@ -301,8 +301,8 @@ describe('update command helpers', () => {
           } else if (npmArgs[0] === 'install' && npmArgs.includes('--prefix')) {
             if (candidateInstallHang) return;
             const prefix = npmArgs[npmArgs.indexOf('--prefix') + 1];
-            const packageSpec = npmArgs.find((arg) => arg.startsWith('@rpamis/comet@'))!;
-            const requestedVersion = packageSpec.slice('@rpamis/comet@'.length);
+            const packageSpec = npmArgs.find((arg) => arg.startsWith('@cli-tools/yuan-comet@'))!;
+            const requestedVersion = packageSpec.slice('@cli-tools/yuan-comet@'.length);
             await writeFakeCometPackage(
               path.join(prefix, 'node_modules', '@rpamis', 'comet'),
               candidateVersionOverride ?? requestedVersion,
@@ -315,7 +315,7 @@ describe('update command helpers', () => {
               await fs.writeFile(
                 path.join(packageRoot, 'package.json'),
                 JSON.stringify({
-                  name: '@rpamis/comet',
+                  name: '@cli-tools/yuan-comet',
                   version: candidateVersionOverride ?? requestedVersion,
                   bin: { comet: 'linked/comet.js' },
                 }),
@@ -353,8 +353,8 @@ describe('update command helpers', () => {
                   : 'Usage: comet native <command> [options]\n';
             child.stdout.emit('data', Buffer.from(output));
           } else if (npmArgs[0] === 'install') {
-            const packageSpec = npmArgs.find((arg) => arg.startsWith('@rpamis/comet@'))!;
-            const requestedVersion = packageSpec.slice('@rpamis/comet@'.length);
+            const packageSpec = npmArgs.find((arg) => arg.startsWith('@cli-tools/yuan-comet@'))!;
+            const requestedVersion = packageSpec.slice('@cli-tools/yuan-comet@'.length);
             const packageRoot = npmArgs.includes('-g')
               ? path.join(fakeGlobalNpmRoot, '@rpamis', 'comet')
               : path.join(
@@ -991,7 +991,7 @@ describe('update command helpers', () => {
     await fs.mkdir(projectDir, { recursive: true });
     await fs.writeFile(
       path.join(projectDir, 'package.json'),
-      JSON.stringify({ devDependencies: { '@rpamis/comet': '^0.2.4' } }),
+      JSON.stringify({ devDependencies: { '@cli-tools/yuan-comet': '^0.2.4' } }),
       'utf-8',
     );
 
@@ -1009,13 +1009,13 @@ describe('update command helpers', () => {
     expect(buildNpmUpdateArgs('global')).toEqual([
       'install',
       '-g',
-      '@rpamis/comet@latest',
+      '@cli-tools/yuan-comet@latest',
       '--registry',
       'https://registry.npmjs.org',
     ]);
     expect(buildNpmUpdateArgs('project')).toEqual([
       'install',
-      '@rpamis/comet@latest',
+      '@cli-tools/yuan-comet@latest',
       '--registry',
       'https://registry.npmjs.org',
     ]);
@@ -1054,7 +1054,7 @@ describe('update command helpers', () => {
     await fs.rm(path.join(project, 'node_modules'), { recursive: true, force: true });
     await fs.writeFile(
       path.join(project, 'package.json'),
-      JSON.stringify({ optionalDependencies: { '@rpamis/comet': '^0.4.0' } }),
+      JSON.stringify({ optionalDependencies: { '@cli-tools/yuan-comet': '^0.4.0' } }),
     );
     await expect(detectCometPackageScope(project, path.join(tmpDir, 'other'))).resolves.toBe(
       'project',
@@ -1197,7 +1197,8 @@ describe('update command helpers', () => {
       expect(result.npm).toMatchObject({
         scope: 'global',
         status: 'updated',
-        command: 'npm install -g @rpamis/comet@0.4.0-beta.8 --registry https://registry.npmjs.org',
+        command:
+          'npm install -g @cli-tools/yuan-comet@0.4.0-beta.8 --registry https://registry.npmjs.org',
       });
     } finally {
       log.mockRestore();
@@ -1209,7 +1210,7 @@ describe('update command helpers', () => {
     expect(mockedSpawn.mock.calls.at(-1)?.[1]?.slice(1)).toEqual([
       'install',
       '-g',
-      '@rpamis/comet@0.4.0-beta.8',
+      '@cli-tools/yuan-comet@0.4.0-beta.8',
       '--registry',
       'https://registry.npmjs.org',
     ]);
@@ -1453,14 +1454,14 @@ describe('update command helpers', () => {
       return npmArgs[0] === 'install' && !npmArgs.includes('--prefix');
     });
     expect(installCalls.map((call) => call[1]?.[3])).toEqual([
-      '@rpamis/comet@0.4.0-beta.8',
-      '@rpamis/comet@0.4.0-beta.7',
+      '@cli-tools/yuan-comet@0.4.0-beta.8',
+      '@cli-tools/yuan-comet@0.4.0-beta.7',
     ]);
   });
 
   it('restores project package metadata byte-for-byte after a failed project install', async () => {
     const projectDir = path.join(tmpDir, 'project with spaces & metadata');
-    const packageJson = '{\n  "devDependencies": { "@rpamis/comet": "^0.4.0-beta.7" }\n}\n';
+    const packageJson = '{\n  "devDependencies": { "@cli-tools/yuan-comet": "^0.4.0-beta.7" }\n}\n';
     const packageLock = '{"lockfileVersion":3,"name":"before"}\n';
     await fs.mkdir(path.join(projectDir, '.claude', 'skills', 'comet'), { recursive: true });
     await fs.writeFile(path.join(projectDir, '.claude', 'skills', 'comet', 'SKILL.md'), '# Comet');
@@ -1505,7 +1506,8 @@ describe('update command helpers', () => {
   it('reads a hoisted project package and restores workspace-root metadata after failure', async () => {
     const workspaceRoot = path.join(tmpDir, 'workspace with spaces');
     const projectDir = path.join(workspaceRoot, 'packages', 'app');
-    const projectPackageJson = '{\n  "devDependencies": { "@rpamis/comet": "^0.4.0-beta.7" }\n}\n';
+    const projectPackageJson =
+      '{\n  "devDependencies": { "@cli-tools/yuan-comet": "^0.4.0-beta.7" }\n}\n';
     const rootPackageJson = '{\n  "private": true, "workspaces": ["packages/*"]\n}\n';
     const rootPackageLock = '{"lockfileVersion":3,"name":"workspace-before"}\n';
     const config = defaultProjectConfig('.');
@@ -1593,10 +1595,10 @@ describe('update command helpers', () => {
 
   it('formats the npm update command for friendly console output', () => {
     expect(formatNpmUpdateCommand('global')).toBe(
-      'npm install -g @rpamis/comet@latest --registry https://registry.npmjs.org',
+      'npm install -g @cli-tools/yuan-comet@latest --registry https://registry.npmjs.org',
     );
     expect(formatNpmUpdateCommand('project')).toBe(
-      'npm install @rpamis/comet@latest --registry https://registry.npmjs.org',
+      'npm install @cli-tools/yuan-comet@latest --registry https://registry.npmjs.org',
     );
   });
 
@@ -1768,7 +1770,7 @@ describe('update command helpers', () => {
     expect(installCalls[0][1]?.slice(1)).toEqual([
       'install',
       '-g',
-      '@rpamis/comet@0.4.0-beta.8',
+      '@cli-tools/yuan-comet@0.4.0-beta.8',
       '--registry',
       'https://registry.npmjs.org',
     ]);

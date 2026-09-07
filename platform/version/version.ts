@@ -21,7 +21,7 @@ function readCurrentVersion(): string {
 // so a single memoized read is sufficient.
 let cachedVersion: string | null = null;
 
-const PACKAGE_NAME = '@rpamis/comet';
+const PACKAGE_NAME = '@cli-tools/yuan-comet';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 
 export interface VersionCheckResult {

@@ -11,9 +11,9 @@
   <a href="https://github.com/rpamis/comet/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rpamis/comet/ci.yml?branch=master&style=flat-square&label=CI" /></a>
   <a href="https://app.codecov.io/gh/rpamis/comet/tree/master"><img alt="codecov" src="https://img.shields.io/codecov/c/github/rpamis/comet/master?style=flat-square&label=coverage&color=%23E61A7A" /></a>
   <a href="https://deepwiki.com/rpamis/comet"><img alt="DeepWiki" src="https://img.shields.io/badge/DeepWiki-rpamis%2Fcomet-blue?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm version" src="https://img.shields.io/npm/v/@rpamis/comet?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm total download count" src="https://img.shields.io/npm/dt/@rpamis/comet?style=flat-square&label=Downloads" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm monthly download count" src="https://img.shields.io/npm/dm/@rpamis/comet?style=flat-square&label=Downloads/mo" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm version" src="https://img.shields.io/npm/v/@cli-tools/yuan-comet?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm total download count" src="https://img.shields.io/npm/dt/@cli-tools/yuan-comet?style=flat-square&label=Downloads" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm monthly download count" src="https://img.shields.io/npm/dm/@cli-tools/yuan-comet?style=flat-square&label=Downloads/mo" /></a>
   <a href="https://docs.comet.rpamis.com/"><img alt="Comet Docs" src="https://img.shields.io/badge/Docs-docs.comet.rpamis.com-FFD700?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://atomgit.com/rpamis/comet"><img alt="AtomGitStars" src="https://atomgit.com/rpamis/comet/star/badge.svg" /></a>
@@ -149,7 +149,7 @@ Requirements:
 - Git
 
 ```bash
-npm install -g @rpamis/comet
+npm install -g @cli-tools/yuan-comet
 ```
 
 ## Quick Start
@@ -537,22 +537,22 @@ does not expand the backend command list; see the [Skill creation guide](docs/op
 ### Comet Skills
 
 <details>
-<summary>View Comet skills</summary>
+<summary>View Comet skills (SDD Mapping)</summary>
 
-| Skill            | Description                                                                                  |
+| Skill (SDD Mapping) | Description                                                                                  |
 | ---------------- | -------------------------------------------------------------------------------------------- |
-| `/comet`         | Shared entry — routes to the configured Native or Classic workflow from `.comet/config.yaml` |
-| `/comet-native`  | Permanent Native entry — self-contained, recoverable Shape, Build, Verify, and Archive       |
-| `/comet-classic` | Permanent Classic entry — the five-phase OpenSpec + Superpowers workflow                     |
-| `/comet-review`  | Read-only manual review of the current Native or Classic change without advancing its phase  |
-| `/comet-open`    | Classic phase 1: Open a change (proposal, design, task breakdown)                            |
-| `/comet-design`  | Classic phase 2: Deep design (brainstorming, Design Doc)                                     |
-| `/comet-build`   | Classic phase 3: Plan and build (implementation plan, code commits)                          |
-| `/comet-verify`  | Classic phase 4: Verify and finish (testing, verification report)                            |
-| `/comet-archive` | Classic phase 5: Archive (delta spec sync, status annotation)                                |
-| `/comet-hotfix`  | Classic preset: Quick bug fix                                                                 |
-| `/comet-tweak`   | Classic preset: OpenSpec-chained medium change                                                |
-| `/comet-any`     | Comet Skill Creator — Create or optimize a reusable Skill                                    |
+| `/comet` (SDD: `/sdd`)         | Shared entry — routes to the configured Native or Classic workflow from `.comet/config.yaml` |
+| `/comet-native` (SDD: `/sdd-native`)  | Permanent Native entry — self-contained, recoverable Shape, Build, Verify, and Archive       |
+| `/comet-classic` (SDD: `/sdd-classic`) | Permanent Classic entry — the five-phase OpenSpec + Superpowers workflow                     |
+| `/comet-review` (SDD: `/sdd-review`)  | Read-only manual review of the current Native or Classic change without advancing its phase  |
+| `/comet-open` (SDD: `/sdd-open`)    | Classic phase 1: Open a change (proposal, design, task breakdown)                            |
+| `/comet-design` (SDD: `/sdd-design`)  | Classic phase 2: Deep design (brainstorming, Design Doc)                                     |
+| `/comet-build` (SDD: `/sdd-build`)   | Classic phase 3: Plan and build (implementation plan, code commits)                          |
+| `/comet-verify` (SDD: `/sdd-verify`)  | Classic phase 4: Verify and finish (testing, verification report)                            |
+| `/comet-archive` (SDD: `/sdd-archive`) | Classic phase 5: Archive (delta spec sync, status annotation)                                |
+| `/comet-hotfix` (SDD: `/sdd-hotfix`)  | Classic preset: Quick bug fix                                                                 |
+| `/comet-tweak` (SDD: `/sdd-tweak`)   | Classic preset: OpenSpec-chained medium change                                                |
+| `/comet-any` (SDD: `/sdd-any`)     | Comet Skill Creator — Create or optimize a reusable Skill                                    |
 
 </details>
 

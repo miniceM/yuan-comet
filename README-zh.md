@@ -11,9 +11,9 @@
   <a href="https://github.com/rpamis/comet/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rpamis/comet/ci.yml?branch=master&style=flat-square&label=CI" /></a>
   <a href="https://app.codecov.io/gh/rpamis/comet/tree/master"><img alt="codecov" src="https://img.shields.io/codecov/c/github/rpamis/comet/master?style=flat-square&label=coverage&color=%23E61A7A" /></a>
   <a href="https://deepwiki.com/rpamis/comet"><img alt="DeepWiki" src="https://img.shields.io/badge/DeepWiki-rpamis%2Fcomet-blue?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm version" src="https://img.shields.io/npm/v/@rpamis/comet?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm total download count" src="https://img.shields.io/npm/dt/@rpamis/comet?style=flat-square&label=Downloads" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm monthly download count" src="https://img.shields.io/npm/dm/@rpamis/comet?style=flat-square&label=Downloads/mo" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm version" src="https://img.shields.io/npm/v/@cli-tools/yuan-comet?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm total download count" src="https://img.shields.io/npm/dt/@cli-tools/yuan-comet?style=flat-square&label=Downloads" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm monthly download count" src="https://img.shields.io/npm/dm/@cli-tools/yuan-comet?style=flat-square&label=Downloads/mo" /></a>
   <a href="https://docs.comet.rpamis.com/"><img alt="Comet Docs" src="https://img.shields.io/badge/Docs-docs.comet.rpamis.com-FFD700?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://atomgit.com/rpamis/comet"><img alt="AtomGitStars" src="https://atomgit.com/rpamis/comet/star/badge.svg" /></a>
@@ -132,7 +132,7 @@ Comet的许多能力都能够在海内外大厂实践中找到相似之处，想
 - Git
 
 ```bash
-npm install -g @rpamis/comet
+npm install -g @cli-tools/yuan-comet
 ```
 
 ## 快速开始
@@ -506,22 +506,22 @@ comet eval ./my-skill --suite langsmith --html
 ### Comet 技能
 
 <details>
-<summary>查看 Comet 技能列表</summary>
+<summary>查看技能列表（SDD 映射）</summary>
 
-| 技能             | 描述                                                                          |
+| 技能（SDD 映射） | 描述                                                                          |
 | ---------------- | ----------------------------------------------------------------------------- |
-| `/comet`         | 共享入口 — 根据 `.comet/config.yaml` 转发到项目配置的 Native 或 Classic       |
-| `/comet-native`  | Native 永久入口 — Shape、Build、Verify、Archive，自包含且可恢复               |
-| `/comet-classic` | Classic 永久入口 — OpenSpec + Superpowers 五阶段工作流                        |
-| `/comet-review`  | 手动只读审查当前 Native 或 Classic change，不推进阶段也不替代 Verify          |
-| `/comet-open`    | Classic 阶段 1：打开变更（提案、设计、任务分解）                              |
-| `/comet-design`  | Classic 阶段 2：深度设计（头脑风暴、设计文档）                                |
-| `/comet-build`   | Classic 阶段 3：规划与构建（实现计划、代码提交）                              |
-| `/comet-verify`  | Classic 阶段 4：验证与完成（测试、验证报告）                                  |
-| `/comet-archive` | Classic 阶段 5：归档（delta spec 同步、状态标注）                             |
-| `/comet-hotfix`  | Classic 快捷路径：快速 bug 修复                                                |
-| `/comet-tweak`   | Classic 轻量路径：串联 OpenSpec 的中等改动                                     |
-| `/comet-any`     | Comet Skill Creator：创建或优化可复用 Skill                                   |
+| `/comet` (SDD: `/sdd`)         | 共享入口 — 根据 `.comet/config.yaml` 转发到项目配置的 Native 或 Classic       |
+| `/comet-native` (SDD: `/sdd-native`)  | Native 永久入口 — Shape、Build、Verify、Archive，自包含且可恢复               |
+| `/comet-classic` (SDD: `/sdd-classic`) | Classic 永久入口 — OpenSpec + Superpowers 五阶段工作流                        |
+| `/comet-review` (SDD: `/sdd-review`)  | 手动只读审查当前 Native 或 Classic change，不推进阶段也不替代 Verify          |
+| `/comet-open` (SDD: `/sdd-open`)    | Classic 阶段 1：打开变更（提案、设计、任务分解）                              |
+| `/comet-design` (SDD: `/sdd-design`)  | Classic 阶段 2：深度设计（头脑风暴、设计文档）                                |
+| `/comet-build` (SDD: `/sdd-build`)   | Classic 阶段 3：规划与构建（实现计划、代码提交）                              |
+| `/comet-verify` (SDD: `/sdd-verify`)  | Classic 阶段 4：验证与完成（测试、验证报告）                                  |
+| `/comet-archive` (SDD: `/sdd-archive`) | Classic 阶段 5：归档（delta spec 同步、状态标注）                             |
+| `/comet-hotfix` (SDD: `/sdd-hotfix`)  | Classic 快捷路径：快速 bug 修复                                                |
+| `/comet-tweak` (SDD: `/sdd-tweak`)   | Classic 轻量路径：串联 OpenSpec 的中等改动                                     |
+| `/comet-any` (SDD: `/sdd-any`)     | Comet Skill Creator：创建或优化可复用 Skill                                   |
 
 </details>
 

@@ -17,6 +17,7 @@ import {
   type WorkflowProjectConfigIdentity,
 } from '../workflow-contract/project-config-reader.js';
 import { lstat, readFile, realpath, rename, rmdir, unlink, writeFile } from 'fs/promises';
+import { projectSkillPath, toProjectedSkillName } from './skill-mapping.js';
 
 import {
   fileExists,
@@ -765,7 +766,9 @@ async function removeCometSkillsForPlatform(
       removablePaths.add(retiredPath);
     }
   }
-  const managedSkills = [...removablePaths];
+  const managedSkills = [
+    ...new Set([...removablePaths, ...[...removablePaths].map(projectSkillPath)]),
+  ];
   const skillsDir = getPlatformSkillsDir(platform, scope);
   const uniqueSkillsDirs = [
     ...new Set([
@@ -799,6 +802,19 @@ async function removeCometSkillsForPlatform(
         }
       } catch {
         failed++;
+      }
+
+      const projectedSkillName = toProjectedSkillName(skillName);
+      if (projectedSkillName !== skillName) {
+        const projectedCommandFile = path.join(commandsDir, `${projectedSkillName}.md`);
+        try {
+          const result = await removeFile(projectedCommandFile);
+          if (result) {
+            removed++;
+          }
+        } catch {
+          failed++;
+        }
       }
     }
   }

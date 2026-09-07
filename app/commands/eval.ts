@@ -81,7 +81,7 @@ function assertEvalHarness(root: string, suite: EvalSuite): void {
 
   throw new Error(
     `Eval harness is missing at ${root}.\n` +
-      'Reinstall @rpamis/comet or pass --project <repository-root>.',
+      'Reinstall @cli-tools/yuan-comet or pass --project <repository-root>.',
   );
 }
 

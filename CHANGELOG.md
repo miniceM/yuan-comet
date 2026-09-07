@@ -1,11 +1,13 @@
 # Changelog
 
-All notable changes to @rpamis/comet will be documented in this file.
+All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ## What's Changed [0.4.0-rc.2] - 2026-09-02
 
 ### Added
 
+- **Package rename to @cli-tools/yuan-comet**: Renamed the published npm package to `@cli-tools/yuan-comet` to distinguish this enterprise distribution from upstream Comet while preserving compatibility across update checks and installation targets.
+- **Enterprise SDD skill name projection**: Platform skill installation now projects user-facing skills to the `/sdd-*` prefix (e.g. `/sdd`, `/sdd-open`, `/sdd-native`, `/sdd-classic`, `/sdd-design`, `/sdd-build`, `/sdd-verify`, `/sdd-archive`) across IDE and agent platforms (Cursor, Claude Code, OpenCode, Windsurf, Pi), transforming frontmatter names and in-file slash commands while preserving canonical upstream assets for low-conflict upstream synchronization.
 - **Enterprise Guard managed runtime and integrity verification**: Enterprise Gateway, Runner, and platform plugin bridges now install into a versioned, tamper-evident managed runtime directory with manifest schema validation and sha256 checksums. Updates write and verify new runtime versions before atomically switching active pointers, and doctor inspects file digests, permissions, protocol compatibility, tool coverage, and deduplication.
 - **Enterprise Guard for OpenCode**: `comet init` and `comet update` now install an auto-discovered managed OpenCode plugin bridge and Runner. Bash commands are evaluated before execution to block high-risk operations such as embedded credentials or private keys, filesystem-root recursive deletion, and force-push commands. `comet doctor --repair` restores missing or outdated managed files, while uninstall removes only Comet-owned files and preserves user plugins and configuration.
 - **Enterprise Guard Gateway protocol suite**: Extended the unified Composite Gateway across verified command-hook platforms (Codex, Amazon Q Developer, Qwen Code, Gemini CLI, GitHub Copilot, Trae, Trae CN, Oh My Pi, DeepSeek Harness) with dedicated input codecs, secondary deserialization, and decision rendering, automatically retiring legacy dual Hooks while preserving user custom configurations.

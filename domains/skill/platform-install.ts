@@ -33,6 +33,7 @@ import {
 import { readWorkflowProjectConfigSnapshot } from '../workflow-contract/project-config-reader.js';
 import { writeWorkflowProjectConfigSource } from '../workflow-contract/project-config-writer.js';
 import { ensureProtectedProjectDirectory } from '../workflow-contract/protected-project-path.js';
+import { projectSkillContent, projectSkillPath, toProjectedSkillName } from './skill-mapping.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -231,12 +232,17 @@ export function isManagedSkillPathForSelection(
   workflowSelection: InitWorkflowSelection,
 ): boolean {
   if (workflowSelection === 'both') return true;
-  if (workflowSelection === 'classic') return !skillPath.startsWith('comet-native/');
+  if (workflowSelection === 'classic') {
+    return !skillPath.startsWith('comet-native/') && !skillPath.startsWith('sdd-native/');
+  }
   return (
     NATIVE_SHARED_SKILL_PATHS.has(skillPath) ||
     skillPath.startsWith('comet-native/') ||
+    skillPath.startsWith('sdd-native/') ||
     skillPath.startsWith('comet-any/') ||
-    skillPath.startsWith('comet-memory/')
+    skillPath.startsWith('sdd-any/') ||
+    skillPath.startsWith('comet-memory/') ||
+    skillPath.startsWith('sdd-memory/')
   );
 }
 
@@ -256,8 +262,14 @@ export async function detectInstalledWorkflowSelection(
   skillsRoot: string,
 ): Promise<InitWorkflowSelection> {
   const [hasNative, hasClassic] = await Promise.all([
-    fileExists(path.join(skillsRoot, 'comet-native', 'SKILL.md')),
-    fileExists(path.join(skillsRoot, 'comet-classic', 'SKILL.md')),
+    Promise.all([
+      fileExists(path.join(skillsRoot, 'comet-native', 'SKILL.md')),
+      fileExists(path.join(skillsRoot, 'sdd-native', 'SKILL.md')),
+    ]).then(([a, b]) => a || b),
+    Promise.all([
+      fileExists(path.join(skillsRoot, 'comet-classic', 'SKILL.md')),
+      fileExists(path.join(skillsRoot, 'sdd-classic', 'SKILL.md')),
+    ]).then(([a, b]) => a || b),
   ]);
   if (hasNative && hasClassic) return 'both';
   if (hasNative) return 'native';
@@ -297,9 +309,12 @@ function getManagedSkillReplacementPaths(
   ];
 
   for (const skillPath of managedPaths) {
-    const parts = skillPath.split('/').filter(Boolean);
-    for (let depth = 1; depth <= parts.length; depth++) {
-      allowed.add(parts.slice(0, depth).join('/'));
+    const projectedPath = projectSkillPath(skillPath);
+    for (const currentPath of [skillPath, projectedPath]) {
+      const parts = currentPath.split('/').filter(Boolean);
+      for (let depth = 1; depth <= parts.length; depth++) {
+        allowed.add(parts.slice(0, depth).join('/'));
+      }
     }
   }
 
@@ -314,7 +329,10 @@ function getManagedSkillTopLevelEntries(
 
   for (const skillPath of getManagedSkillPathsForSelection(manifest, workflowSelection)) {
     const [topLevel] = skillPath.split('/').filter(Boolean);
-    if (topLevel) entries.add(topLevel);
+    if (topLevel) {
+      entries.add(topLevel);
+      entries.add(toProjectedSkillName(topLevel));
+    }
   }
 
   return [...entries].sort();
@@ -682,15 +700,35 @@ async function installSkillsAsSymlink(
     try {
       if (!overwrite && (await fileExists(centralDest))) {
         skippedCount++;
-        continue;
+      } else {
+        await copyFile(src, centralDest);
+        copied++;
       }
-      await copyFile(src, centralDest);
-      copied++;
     } catch (err) {
       failedCount++;
       console.error(
         `    Failed to copy ${skillRelPath} to central store: ${(err as Error).message}`,
       );
+    }
+
+    const projectedRelPath = projectSkillPath(skillRelPath);
+    if (projectedRelPath !== skillRelPath) {
+      const centralProjectedDest = path.join(centralDir, 'skills', projectedRelPath);
+      try {
+        if (overwrite || !(await fileExists(centralProjectedDest))) {
+          await ensureDir(path.dirname(centralProjectedDest));
+          if (skillRelPath.endsWith('.md') || skillRelPath.endsWith('.yaml')) {
+            const raw = await readFile(src, 'utf-8');
+            await writeFile(centralProjectedDest, projectSkillContent(raw), 'utf-8');
+          } else {
+            await copyFile(src, centralProjectedDest);
+          }
+        }
+      } catch (err) {
+        console.error(
+          `    Failed to copy projected ${projectedRelPath} to central store: ${(err as Error).message}`,
+        );
+      }
     }
   }
 
@@ -801,10 +839,10 @@ async function copyCometSkillsForPlatform(
     try {
       if (!overwrite && (await fileExists(dest))) {
         skippedCount++;
-        continue;
+      } else {
+        await copyFile(src, dest);
+        copied++;
       }
-      await copyFile(src, dest);
-      copied++;
     } catch (err) {
       // Surface the failure via the returned `failed` count instead of
       // swallowing it, so a half-installed state (e.g. a missing
@@ -812,6 +850,29 @@ async function copyCometSkillsForPlatform(
       // breaking phase guard downstream.
       failedCount++;
       console.error(`    Failed to copy ${skillRelPath}: ${(err as Error).message}`);
+    }
+
+    const projectedRelPath = projectSkillPath(skillRelPath);
+    if (projectedRelPath !== skillRelPath) {
+      const projectedDest = path.join(
+        baseDir,
+        getPlatformSkillsDir(platform, scope),
+        'skills',
+        projectedRelPath,
+      );
+      try {
+        if (overwrite || !(await fileExists(projectedDest))) {
+          await ensureDir(path.dirname(projectedDest));
+          if (skillRelPath.endsWith('.md') || skillRelPath.endsWith('.yaml')) {
+            const raw = await readFile(src, 'utf-8');
+            await writeFile(projectedDest, projectSkillContent(raw), 'utf-8');
+          } else {
+            await copyFile(src, projectedDest);
+          }
+        }
+      } catch (err) {
+        console.error(`    Failed to project ${projectedRelPath}: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -863,9 +924,10 @@ function getTopLevelSkillNames(skillPaths: string[]): string[] {
 }
 
 function renderPiCommandExtension(skillNames: string[]): string {
+  const allNames = [...new Set([...skillNames.map(toProjectedSkillName), ...skillNames])];
   return `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const commands = ${JSON.stringify(skillNames, null, 2)} as const;
+const commands = ${JSON.stringify(allNames, null, 2)} as const;
 
 export default function registerCometCommands(pi: ExtensionAPI) {
   for (const name of commands) {
@@ -971,23 +1033,28 @@ async function createOpenCodeCommands(
     if (parts.length !== 2 || parts[1] !== 'SKILL.md') continue;
 
     const skillName = parts[0];
-    const dest = path.join(commandsDir, `${skillName}.md`);
+    const projectedSkillName = toProjectedSkillName(skillName);
 
-    try {
-      if (!overwrite && (await fileExists(dest))) {
-        skipped++;
-        continue;
-      }
+    const writeCommand = async (name: string, isProjected: boolean) => {
+      const dest = path.join(commandsDir, `${name}.md`);
+      try {
+        if (!overwrite && (await fileExists(dest))) {
+          if (!isProjected) skipped++;
+          return;
+        }
 
-      await ensureDir(path.dirname(dest));
-      let skillSourcePath = path.join(assetsDir, languageSkillsDir, skillPath);
-      if (!(await fileExists(skillSourcePath))) {
-        skillSourcePath = path.join(assetsDir, 'skills', skillPath);
-      }
-      const skillBody = stripFrontmatter(await readFile(skillSourcePath, 'utf-8'));
-      const content = `${OPENCODE_COMMAND_HEADER.replace('{skillName}', skillName)}
-Equivalent Comet skill: \`${skillName}\`
-Command name: \`/${skillName}\`
+        await ensureDir(path.dirname(dest));
+        let skillSourcePath = path.join(assetsDir, languageSkillsDir, skillPath);
+        if (!(await fileExists(skillSourcePath))) {
+          skillSourcePath = path.join(assetsDir, 'skills', skillPath);
+        }
+        let skillBody = stripFrontmatter(await readFile(skillSourcePath, 'utf-8'));
+        if (isProjected) {
+          skillBody = projectSkillContent(skillBody, name);
+        }
+        const content = `${OPENCODE_COMMAND_HEADER.replace('{skillName}', name)}
+Equivalent Comet skill: \`${name}\`
+Command name: \`/${name}\`
 
 Use the invocation arguments below as the user input for this workflow:
 
@@ -997,11 +1064,20 @@ $ARGUMENTS
 
 ${skillBody}
 `;
-      await writeFile(dest, content, 'utf-8');
-      copied++;
-    } catch (err) {
-      failed++;
-      console.error(`    Failed to create OpenCode command ${dest}: ${(err as Error).message}`);
+        await writeFile(dest, content, 'utf-8');
+        if (!isProjected) copied++;
+      } catch (err) {
+        if (!isProjected) failed++;
+        console.error(`    Failed to create OpenCode command ${dest}: ${(err as Error).message}`);
+      }
+    };
+
+    // 1. Write canonical command (e.g. comet-open.md)
+    await writeCommand(skillName, false);
+
+    // 2. Write projected enterprise command (e.g. sdd-open.md)
+    if (projectedSkillName !== skillName) {
+      await writeCommand(projectedSkillName, true);
     }
   }
 

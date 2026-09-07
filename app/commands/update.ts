@@ -80,7 +80,7 @@ import { t, type TranslationKey } from './i18n.js';
 import { assertProjectScopeOptions, resolveProjectScopeMode } from './project-scope-selection.js';
 import type { CommandExecutionResult } from './command-result.js';
 
-const PACKAGE_NAME = '@rpamis/comet';
+const PACKAGE_NAME = '@cli-tools/yuan-comet';
 const OFFICIAL_REGISTRY = 'https://registry.npmjs.org';
 
 interface UpdateOptions {
