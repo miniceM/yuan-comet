@@ -69,6 +69,18 @@ comet native status <change-name> --details --json
 
 读取返回的 brief、完整 proposed Specs、acceptance、Builder handoff、checks、verification、risks、blockers 和 verification report 引用。只使用当前 candidate/iteration 的证据；历史轮次仅用于解释残留风险，不得覆盖当前状态。
 
+### Enterprise Guard 审计状态
+
+执行只读检查命令核验 Enterprise Guard 审计状态：
+
+```bash
+pnpm run check:enterprise-guard
+```
+
+若无法执行该命令，按照消费协议读取 `.comet/enterprise-guard/findings.jsonl`：
+- 文件不存在时，视为审计状态清洁（clear）；
+- 文件存在时，逐行核对 findings 记录；若存在引用 `exceptionId` 的记录，读取 `.comet/enterprise-guard/exceptions.json` 核对例外的有效性（包括 `status === 'active'`、仍在有效期内、且 `scope` 严格匹配当前变更的文件路径或命令）。
+
 ## 3. 确定实现差异
 
 1. 先运行 `git status --short --untracked-files=all`，完整枚举已暂存、未暂存和未跟踪的工作树状态。
@@ -86,7 +98,13 @@ comet native status <change-name> --details --json
 - 安全风险、权限或路径边界问题；
 - 错误处理、兼容性和重要边界条件；
 - 任务遗漏、实现与当前 change 明确要求不一致；
-- 测试是否覆盖本次行为变化，以及已有测试证据能否支撑相应结论。
+- 测试是否覆盖本次行为变化，以及已有测试证据能否支撑相应结论；
+- Enterprise Guard 规则审计与合规核验：
+  - **阻断项（status: blocked）**：若存在 HARD `deny`、审计日志损坏（格式错误或无法解析）、或存在未通过有效例外的违规，必须给出阻断性审查意见（标为 `CRITICAL`），阻止合入主线。输出仅列出规则 ID 和不可逆 `fingerprint`，严禁回显敏感原始上下文；
+  - **例外与警告项（status: warn）**：
+    - 若命中规则但绑定了有效、未过期且范围匹配的例外（来自 `exceptions.json`），标为 `WARNING`，提示审计风险并在结果中记录留痕（列出规则 ID、影响路径和 `exceptionId`），并明确声明“例外放行并不代表安全检查通过”；
+    - 若存在未绑定有效例外的未解决 SOFT findings，标为 `IMPORTANT`，给出阻断性审查意见，要求整改违规代码或申请正规例外审批；
+  - **清洁项（status: clear）**：仅代表 Enterprise Guard 规则审计通过，不替代业务测试与人工代码逻辑审查。
 
 不要把风格偏好、无关重构或没有具体影响的猜测列为 finding。每条 finding 必须能指向具体文件和行号，并说明可触发的行为或风险；证据不足时降低严重度或放入“开放问题”。
 
@@ -110,7 +128,7 @@ comet native status <change-name> --details --json
 随后输出：
 
 - `审查范围`：workflow、change、phase、基线、纳入的差异和任何范围限制；
-- `证据状态`：已读取的测试/构建/验证证据及其新鲜度，不重新执行测试；
+- `证据状态`：已读取的测试/构建/验证证据及其新鲜度，以及 Enterprise Guard findings 审计状态（clear / warn / blocked 与例外留痕），不重新执行测试；
 - `开放问题`：只有确实阻碍判断的问题；
 - `结论`：finding 数量汇总，或明确写“未发现具体问题”。
 
