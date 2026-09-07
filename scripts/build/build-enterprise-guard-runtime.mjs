@@ -25,7 +25,7 @@ if (
   throw new Error('Enterprise Guard runtime entries and outputs must use the same keys');
 }
 
-const executableOutputs = new Set(['gateway', 'runner']);
+const executableOutputs = new Set(['gateway', 'runner', 'gitBoundary']);
 
 function computeSha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');

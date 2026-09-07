@@ -17,6 +17,11 @@
       "sha256": "6725d1f8b88794f5c9d9d2521c4ca4d2665a05fc9be62bf7511ba1e59777fc96",
       "executable": true
     },
+    "gitBoundary": {
+      "fileName": "comet-git-boundary.mjs",
+      "sha256": "15e7cc7e40e5edb4b2c54f2df8eb0bc11692102d1569427f9a81409ee7d956b5",
+      "executable": true
+    },
     "runner": {
       "fileName": "comet-enterprise-runner.mjs",
       "sha256": "2988f8d41bae8808c44e82862c3b30e137ef85a6103af765c56c59af53716729",
