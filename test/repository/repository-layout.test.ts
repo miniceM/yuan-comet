@@ -59,11 +59,13 @@ describe('repository layout registry', () => {
       manifest: 'assets/skills/comet/enterprise-guard-manifest.json',
       entries: {
         gateway: 'domains/enterprise-guard/enterprise-gateway-entry.ts',
+        gitBoundary: 'domains/enterprise-guard/git-boundary-entry.ts',
         runner: 'domains/enterprise-guard/enterprise-runner-entry.ts',
         opencodePlugin: 'domains/enterprise-guard/opencode-plugin-entry.ts',
       },
       outputs: {
         gateway: 'assets/skills/comet/scripts/comet-enterprise-gateway.mjs',
+        gitBoundary: 'assets/skills/comet/scripts/comet-git-boundary.mjs',
         runner: 'assets/skills/comet/scripts/comet-enterprise-runner.mjs',
         opencodePlugin: 'assets/skills/comet/plugins/comet-enterprise-guard.mjs',
       },

@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +13,13 @@ const generatedGateway = path.resolve(
   'comet',
   'scripts',
   'comet-enterprise-gateway.mjs',
+);
+const generatedGitBoundary = path.resolve(
+  'assets',
+  'skills',
+  'comet',
+  'scripts',
+  'comet-git-boundary.mjs',
 );
 const generatedRunner = path.resolve(
   'assets',
@@ -33,6 +41,7 @@ describe('enterprise guard release asset', () => {
   it('publishes a fresh, self-contained enterprise gateway bundle', async () => {
     expect(manifest.skills).toContain('comet/scripts/comet-enterprise-gateway.mjs');
     expect(manifest.skills).toContain('comet/scripts/comet-enterprise-runner.mjs');
+    expect(manifest.skills).toContain('comet/scripts/comet-git-boundary.mjs');
     expect(manifest.skills).toContain('comet/plugins/comet-enterprise-guard.mjs');
     expect(manifest.skills).toContain('comet/enterprise-guard-manifest.json');
     expect(manifest.skills).not.toContain('comet/scripts/comet-enterprise-hook.mjs');
@@ -64,6 +73,8 @@ describe('enterprise guard release asset', () => {
     expect(runtimeManifest.rules).toContain('EG-HARD-INPUT-001');
     expect(runtimeManifest.rules).toContain('EG-HARD-GIT-001');
     expect(runtimeManifest.files.gateway.fileName).toBe('comet-enterprise-gateway.mjs');
+    expect(runtimeManifest.files.gitBoundary.fileName).toBe('comet-git-boundary.mjs');
+    expect(runtimeManifest.files.gitBoundary.executable).toBe(true);
     expect(runtimeManifest.files.runner.fileName).toBe('comet-enterprise-runner.mjs');
     expect(runtimeManifest.files.opencodePlugin.fileName).toBe('comet-enterprise-guard.mjs');
 
@@ -168,5 +179,89 @@ describe('enterprise guard release asset', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe('');
+  });
+
+  it('publishes a self-contained git boundary bundle with zero build-time dependencies', async () => {
+    const source = await fs.readFile(generatedGitBoundary, 'utf8');
+
+    expect(source.startsWith('#!/usr/bin/env node\n')).toBe(true);
+    expect(source).toContain('evaluatePrePush');
+    expect(source).toContain('evaluatePreCommit');
+    expect(source).toContain('runGitBoundaryCli');
+    expect(source).not.toContain('esbuild');
+
+    const helpResult = spawnSync(process.execPath, [generatedGitBoundary, '--help'], {
+      encoding: 'utf8',
+    });
+    expect(helpResult.status).toBe(0);
+    expect(helpResult.stdout).toContain('Usage: comet-git-boundary');
+  });
+
+  it('enforces git boundary pre-push and pre-commit in pure Node runtime', async () => {
+    // 1. pre-push: block force push to protected master
+    const pushInput =
+      'refs/heads/feature 1111111111111111111111111111111111111111 refs/heads/master 2222222222222222222222222222222222222222\n';
+    const blockedPush = spawnSync(
+      process.execPath,
+      [generatedGitBoundary, 'pre-push', '--skip-findings'],
+      {
+        encoding: 'utf8',
+        input: pushInput,
+      },
+    );
+    expect(blockedPush.status).toBe(1);
+    expect(blockedPush.stderr).toContain('EG-HARD-GIT-001');
+    expect(blockedPush.stderr).toContain('Force-pushing to protected branch "master" is forbidden');
+
+    // 2. pre-push: allow safe push to feature branch
+    const safePushInput =
+      'refs/heads/feature 1111111111111111111111111111111111111111 refs/heads/feature 2222222222222222222222222222222222222222\n';
+    const allowedPush = spawnSync(
+      process.execPath,
+      [generatedGitBoundary, 'pre-push', '--skip-findings'],
+      {
+        encoding: 'utf8',
+        input: safePushInput,
+      },
+    );
+    expect(allowedPush.status).toBe(0);
+
+    // 3. pre-commit in temporary git repo
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-boundary-test-'));
+    try {
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: tempDir, stdio: 'ignore' });
+
+      // Staging .env should be blocked
+      await fs.writeFile(path.join(tempDir, '.env'), 'SECRET=foo\n', 'utf8');
+      execFileSync('git', ['add', '.env'], { cwd: tempDir, stdio: 'ignore' });
+
+      const blockedCommit = spawnSync(
+        process.execPath,
+        [generatedGitBoundary, 'pre-commit', '--project-root', tempDir, '--skip-findings'],
+        { encoding: 'utf8' },
+      );
+      expect(blockedCommit.status).toBe(1);
+      expect(blockedCommit.stderr).toContain('EG-HARD-ENV-001');
+
+      // Unstaging .env and staging safe file should pass
+      execFileSync('git', ['reset', '.env'], { cwd: tempDir, stdio: 'ignore' });
+      await fs.rm(path.join(tempDir, '.env'), { force: true });
+      await fs.writeFile(path.join(tempDir, 'safe.txt'), 'hello\n', 'utf8');
+      execFileSync('git', ['add', 'safe.txt'], { cwd: tempDir, stdio: 'ignore' });
+
+      const allowedCommit = spawnSync(
+        process.execPath,
+        [generatedGitBoundary, 'pre-commit', '--project-root', tempDir, '--skip-findings'],
+        { encoding: 'utf8' },
+      );
+      expect(allowedCommit.status).toBe(0);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,1 +1,1 @@
-node scripts/lint/git-pre-push.mjs
+node assets/skills/comet/scripts/comet-git-boundary.mjs pre-push

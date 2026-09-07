@@ -1,2 +1,2 @@
-node scripts/lint/git-pre-commit.mjs
+node assets/skills/comet/scripts/comet-git-boundary.mjs pre-commit
 pnpm exec lint-staged

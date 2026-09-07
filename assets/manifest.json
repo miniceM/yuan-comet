@@ -45,6 +45,7 @@
     "comet/scripts/comet-hook-router.mjs",
     "comet/scripts/comet-enterprise-gateway.mjs",
     "comet/scripts/comet-enterprise-runner.mjs",
+    "comet/scripts/comet-git-boundary.mjs",
     "comet/plugins/comet-enterprise-guard.mjs",
     "comet/enterprise-guard-manifest.json",
     "comet-native/SKILL.md",
