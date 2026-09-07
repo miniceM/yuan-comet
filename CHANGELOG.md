@@ -2,6 +2,25 @@
 
 All notable changes to @rpamis/comet will be documented in this file.
 
+## What's Changed [0.4.0-rc.6] - 2026-09-07
+
+### Added
+
+- **Native specification reference sync**: Correct local Markdown cross-references in confirmed target specs with an audited `comet native spec sync` operation that preserves unaffected acceptance results and schedules affected behavior for verification.
+
+### Changed
+
+- **Native Supervisor verification**: Child tasks carry explicit acceptance scopes and use the same coverage and verdict checks as ordinary verification. Runtime executes repeatable checks, serializes checks in the integration worktree, binds registered reports to the tested candidate and execution, and rejects stale or altered evidence. Interrupted checks distinguish process instances when recovering, and incomplete legacy contracts remain inspectable with recovery guidance. Child verifier results now use `pass`, `fail`, or `blocked` with per-criterion results; passing results require a Runtime receipt.
+
+### Fixed
+
+- **Classic worktree initialization**: New and recovered worktrees retain local Comet and OpenSpec configuration so workflow commands remain usable before initialization files are committed. Existing workspace configuration is preserved, conflicting Classic or OpenSpec settings require resolution, interrupted configuration setup can be retried, and managed worktree directories no longer make the parent workspace appear dirty.
+- **Native Supervisor workspace delivery**: Keep, push, and pull-request finishes preserve the chosen delivery boundary by collecting implementation on the parent change branch first. Archive cleans child worktrees using their registered locations, including when the parent runs in a linked worktree.
+- **Native continuation and recovery**: Supervisor progression returns executable dispatch commands and recoverable task packages without redispatching active children, honors single-session scheduling, and tolerates unchanged configuration copies created by Runtime. Concurrent changes sharing a specification receive an executable Archive ordering choice before confirmation, and interrupted Archive preserves concurrent edits to already-applied specifications.
+- **Native archived status discovery**: Completed changes are no longer hidden by stale active copies in linked worktrees when creation identity and committed Git history prove the archive supersedes them; ambiguous records are reported as conflicts.
+- **Native revision recovery guidance**: Published-spec write rejections point to the current change's supported revision path, and recovery preserves actionable protocol diagnostics for incompatible state schemas.
+- **Native verification reports**: Failed and blocked verification results direct users to repair or resolve blockers before verification resumes, instead of asking them to confirm an unsuccessful result.
+
 ## What's Changed [0.4.0-rc.5] - 2026-09-05
 
 ### Added

@@ -83,6 +83,10 @@ function expectedContinuationOption(
 
 async function portableParentView(paths: NativeProjectPaths, state: NativePortableState) {
   const children = await inspectNativeChildren({ paths, state });
+  const supervisor = children?.confirmed
+    ? await readNativeSupervisorState(paths, state.name, { diagnostics: true })
+    : null;
+  const activeTasks = supervisor?.children.flatMap(({ task }) => (task ? [task.child] : [])) ?? [];
   return {
     ...(children
       ? {
@@ -90,7 +94,7 @@ async function portableParentView(paths: NativeProjectPaths, state: NativePortab
             (summary, child) => ({ ...summary, [child.status]: (summary[child.status] ?? 0) + 1 }),
             { total: children.children.length },
           ),
-          readyChildren: children.readyChildren,
+          readyChildren: activeTasks.length > 0 ? activeTasks : children.readyChildren,
         }
       : {}),
     continuation: nativePortableContinuation(state, children),
@@ -419,14 +423,20 @@ export async function nativeNextCommand(
           let supervisorTasks = [] as Awaited<
             ReturnType<typeof dispatchNativeSupervisorReadyTasks>
           >['tasks'];
+          let supervisorBlockers: Array<{ child: string; message: string }> = [];
+          let readySupervisorChildren: string[] | null = null;
           const supervisor = await readNativeSupervisorState(configured.paths, name);
           if (supervisor && !children.allDone) {
             const dispatched = await dispatchNativeSupervisorReadyTasks({
               paths: configured.paths,
               parent: name,
-              maxParallel,
+              maxParallel: current.coordination_mode === 'single-session' ? 1 : maxParallel,
             });
-            supervisorTasks = dispatched.tasks;
+            supervisorTasks = dispatched.state.children.flatMap(({ task }) => (task ? [task] : []));
+            readySupervisorChildren = dispatched.tasks.map(({ child }) => child);
+            supervisorBlockers = dispatched.state.children.flatMap(({ name: child, blocker }) =>
+              blocker ? [{ child, message: blocker }] : [],
+            );
             if (
               supervisorTasks.length > 0 ||
               dispatched.state.stateVersion !== supervisor.stateVersion
@@ -456,8 +466,9 @@ export async function nativeNextCommand(
                 }),
                 { total: effectiveChildren.children.length },
               ),
-              readyChildren: effectiveChildren.readyChildren,
+              readyChildren: readySupervisorChildren ?? effectiveChildren.readyChildren,
               ...(supervisorTasks.length > 0 ? { supervisorTasks } : {}),
+              ...(supervisorBlockers.length > 0 ? { supervisorBlockers } : {}),
               continuation: nativePortableContinuation(current, effectiveChildren),
             });
           }
