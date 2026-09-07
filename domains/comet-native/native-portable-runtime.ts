@@ -5,7 +5,9 @@ import path from 'node:path';
 import { inspectGitWorktree, resolveGitRef } from '../../platform/paths/git-worktree.js';
 
 import { atomicWriteText } from './native-atomic-file.js';
+import { nativeBriefHasBlockingQuestion } from './native-artifacts.js';
 import { readNativeBoundedTextFile } from './native-bounded-file.js';
+import { canonicalHash } from './native-canonical-hash.js';
 import {
   findNativeV1SupervisorParents,
   hashNativeParentContract,
@@ -16,7 +18,9 @@ import {
 } from './native-children.js';
 import {
   createNativeSupervisorState,
+  advanceNativeSupervisorFinalVerificationHead,
   prepareNativeSupervisorIntegrationWorkspace,
+  recordNativeSupervisorPortableFinalVerification,
   rebuildNativeSupervisorStateFromFacts,
   readNativeSupervisorState,
   reconcileNativeSupervisorState,
@@ -43,6 +47,7 @@ import {
   NATIVE_MAX_VERIFIER_EXECUTION_FAILURES,
   recordNativeVerifierUnavailable,
   recordNativeVerifierExecutionError,
+  prepareNativePortableShapeConfirmation as prepareNativePortableShapeConfirmationState,
   resolveNativeVerifierBlocker,
   returnNativeCandidateToBuild,
   reserveNativeVerifierAttempt,
@@ -68,6 +73,7 @@ import {
   readNativePortableState,
   writeNativePortableState,
 } from './native-portable-state.js';
+import { readNativePortableTransaction } from './native-portable-transactions.js';
 import { toNativePortableText } from './native-portable-text.js';
 import type {
   NativeLocalCheckState,
@@ -109,6 +115,7 @@ export const NATIVE_LOCAL_EXECUTION_FILE = 'state.json';
 export const NATIVE_PORTABLE_BRIEF_TEMPLATE = nativeBriefTemplate('en');
 
 export type NativePortableExpectedContinuationAction =
+  | 'prepare-shape-confirmation'
   | 'confirm-shape'
   | 'accept-result'
   | 'confirm-verifier-unavailable'
@@ -257,7 +264,7 @@ export async function createNativePortableChange(options: {
           language: options.language,
           workspace: portableWorkspace(options.workspaceBinding),
           createdAt: options.now,
-          nextAction: 'confirm-shape',
+          nextAction: 'prepare-shape-confirmation',
         });
         await writeNativePortableState(
           nativePortableStateFile(options.paths, options.name),
@@ -375,9 +382,16 @@ async function readNativePortableAcceptance(options: {
     maxBytes: null,
     includeHash: false,
   });
+  if (nativeBriefHasBlockingQuestion(brief.text)) {
+    throw new Error('Brief has a blocking open question');
+  }
   const specs = [];
+  const specArtifacts = [];
   for (const spec of options.specChanges) {
-    if (spec.source === null) continue;
+    if (spec.source === null) {
+      specArtifacts.push({ ...spec, contentHash: null });
+      continue;
+    }
     const source = await readNativeBoundedTextFile({
       root: changeDir,
       ref: spec.source,
@@ -385,8 +399,129 @@ async function readNativePortableAcceptance(options: {
       includeHash: false,
     });
     specs.push({ capability: spec.capability, source: source.ref, markdown: source.text });
+    specArtifacts.push({
+      ...spec,
+      contentHash: canonicalHash('comet.native.shape-artifact-content.v1', source.text),
+    });
   }
-  return buildNativePortableAcceptance({ briefMarkdown: brief.text, specs });
+  return {
+    acceptance: buildNativePortableAcceptance({ briefMarkdown: brief.text, specs }),
+    formalHash: canonicalHash('comet.native.shape-formal-artifacts.v1', {
+      brief: {
+        source: brief.ref,
+        contentHash: canonicalHash('comet.native.shape-artifact-content.v1', brief.text),
+      },
+      specs: specArtifacts,
+    }),
+  };
+}
+
+function nativePortableShapeConfirmationHash(options: {
+  formalHash: string;
+  childrenHash: string | null;
+  coordinationMode: NativeSupervisorCoordinationMode | undefined;
+}): string {
+  return canonicalHash('comet.native.shape-confirmation.v1', {
+    formalHash: options.formalHash,
+    childrenHash: options.childrenHash,
+    coordinationMode: options.coordinationMode ?? null,
+  });
+}
+
+export async function prepareNativePortableShapeConfirmation(options: {
+  paths: NativeProjectPaths;
+  name: string;
+  coordinationMode?: NativeSupervisorCoordinationMode;
+  expectedContinuation?: NativePortableExpectedContinuation;
+}): Promise<NativePortableState> {
+  return withNativeMutationLock(
+    options.paths,
+    `prepare portable shape confirmation ${options.name}`,
+    async () => {
+      const state = await readNativePortableChange(options.paths, options.name);
+      assertNativePortableExpectedContinuationLocked({
+        state,
+        expected: options.expectedContinuation,
+        action: 'prepare-shape-confirmation',
+      });
+      if (state.phase !== 'shape' || state.status !== 'active' || state.loop.stage !== 'shape') {
+        throw new Error('Native Shape confirmation can only be prepared from active Shape');
+      }
+      const specChanges = await discoverNativePortableSpecChanges({ paths: options.paths, state });
+      const shape = await readNativePortableAcceptance({
+        paths: options.paths,
+        state,
+        specChanges,
+      });
+      const { acceptance } = shape;
+      const children = await readNativeChildrenContract({
+        changeDir: nativePortableChangeDir(options.paths, state.name),
+        acceptanceIds: acceptance.map(({ id }) => id),
+        validation: nativeChildrenAcceptanceValidation({
+          ...state,
+          acceptance,
+        }),
+      });
+      if (children && state.workspace.change_branch === null) {
+        throw new Error('Native parent changes require a Git integration branch');
+      }
+      const coordinationRequired =
+        (await readNativeSupervisorShapeIntent(
+          nativePortableChangeDir(options.paths, state.name),
+        )) ||
+        (children?.contract.schema === 'comet.native.children.v2' &&
+          children.contract.children.length >= 2);
+      if (coordinationRequired && !children) {
+        throw new Error('Native Supervisor Shape requires children.yaml before confirmation');
+      }
+      const coordinationMode = coordinationRequired
+        ? (options.coordinationMode ?? state.coordination_mode)
+        : undefined;
+      if (coordinationRequired && coordinationMode === undefined) {
+        throw new Error(
+          'Native Supervisor Shape requires --coordination-mode multi-session or single-session',
+        );
+      }
+      if (!coordinationRequired && options.coordinationMode !== undefined) {
+        throw new Error(
+          '--coordination-mode is only valid for a multi-child Native Supervisor Shape',
+        );
+      }
+      const shapeState: NativePortableState = {
+        ...state,
+        spec_changes: specChanges,
+        shape_confirmation_hash: nativePortableShapeConfirmationHash({
+          formalHash: shape.formalHash,
+          childrenHash: children?.hash ?? null,
+          coordinationMode,
+        }),
+      };
+      delete shapeState.children_contract_hash;
+      delete shapeState.coordination_mode;
+      if (coordinationRequired) shapeState.coordination_mode = coordinationMode;
+      const next = prepareNativePortableShapeConfirmationState({
+        state: shapeState,
+        acceptance: acceptance.map((entry) => ({ ...entry })),
+      });
+      if (children) {
+        next.children_contract_hash = hashNativeParentContract({
+          acceptance: next.acceptance,
+          children: children.contract,
+        });
+      }
+      const written = await writePortableMutation({ paths: options.paths, previous: state, next });
+      await writeNativeLocalExecution(
+        nativeLocalExecutionFile(options.paths, state.name),
+        rebuildNativeLocalExecution({
+          portableState: written,
+          projectRoot: options.paths.projectRoot,
+          branch: currentBranch(options.paths.projectRoot),
+        }),
+        { containedRoot: options.paths.runtimeDir },
+      );
+      return written;
+    },
+  );
 }
 
 export async function confirmNativePortableShape(options: {
@@ -405,12 +540,27 @@ export async function confirmNativePortableShape(options: {
         expected: options.expectedContinuation,
         action: 'confirm-shape',
       });
+      if (
+        state.phase !== 'shape' ||
+        state.status !== 'await-user' ||
+        state.loop.stage !== 'await-user' ||
+        state.loop.next_action !== 'confirm-shape'
+      ) {
+        throw new Error(
+          'Native Shape can only be confirmed from the persisted user confirmation boundary',
+        );
+      }
+      if (options.coordinationMode !== undefined) {
+        throw new Error('--coordination-mode must be selected before final Shape confirmation');
+      }
+      await ensureNativePortableAcceptanceCurrentLocked({ paths: options.paths, state });
       const specChanges = await discoverNativePortableSpecChanges({ paths: options.paths, state });
-      const acceptance = await readNativePortableAcceptance({
+      const shape = await readNativePortableAcceptance({
         paths: options.paths,
         state,
         specChanges,
       });
+      const { acceptance } = shape;
       const children = await readNativeChildrenContract({
         changeDir: nativePortableChangeDir(options.paths, state.name),
         acceptanceIds: acceptance.map(({ id }) => id),
@@ -428,7 +578,7 @@ export async function confirmNativePortableShape(options: {
         )) ||
         (children?.contract.schema === 'comet.native.children.v2' &&
           children.contract.children.length >= 2);
-      const coordinationMode = options.coordinationMode ?? state.coordination_mode;
+      const coordinationMode = state.coordination_mode;
       if (coordinationRequired && !children) {
         throw new Error('Native Supervisor Shape requires children.yaml before confirmation');
       }
@@ -437,10 +587,25 @@ export async function confirmNativePortableShape(options: {
           'Native Supervisor Shape requires --coordination-mode multi-session or single-session',
         );
       }
-      if (!coordinationRequired && options.coordinationMode !== undefined) {
-        throw new Error(
-          '--coordination-mode is only valid for a multi-child Native Supervisor Shape',
-        );
+      const latestShapeConfirmationHash = nativePortableShapeConfirmationHash({
+        formalHash: shape.formalHash,
+        childrenHash: children?.hash ?? null,
+        coordinationMode,
+      });
+      if (
+        state.shape_confirmation_hash === undefined ||
+        latestShapeConfirmationHash !== state.shape_confirmation_hash
+      ) {
+        const reason =
+          state.shape_confirmation_hash === undefined
+            ? 'Native Shape confirmation fingerprint is missing'
+            : 'Native Shape artifacts changed';
+        await returnNativePortableStateToShapeLocked({
+          paths: options.paths,
+          state,
+          reason,
+        });
+        throw new Error(`${reason}; Native change returned to Shape and requires confirmation`);
       }
       const next = confirmNativePortableAcceptance({
         state: { ...state, spec_changes: specChanges },
@@ -459,9 +624,15 @@ export async function confirmNativePortableShape(options: {
           .find(({ outcome }) => outcome === 'pass' || outcome === 'fail');
         if (latestDecision?.outcome === 'fail' && latestDecision.unresolved_ids.length > 0) {
           const inspection = await inspectNativeChildren({ paths: options.paths, state: next });
+          const statusByChild = new Map(
+            (inspection?.children ?? []).map(({ name, status }) => [name, status]),
+          );
           const repairCoverage = new Set(
-            (inspection?.children ?? [])
-              .filter(({ status }) => status !== 'done')
+            children.contract.children
+              .filter(({ name }) => {
+                const status = statusByChild.get(name);
+                return status !== 'done' && status !== 'integrated' && status !== 'archived';
+              })
               .flatMap(({ covers }) => covers),
           );
           const missing = latestDecision.unresolved_ids.filter((id) => !repairCoverage.has(id));
@@ -573,7 +744,13 @@ export async function inspectNativePortableAcceptanceDrift(options: {
   if (!declarationsMatch) {
     return { drifted: true, reason: 'Native target specification declarations changed' };
   }
-  const acceptance = await readNativePortableAcceptance({ ...options, specChanges });
+  let shape;
+  try {
+    shape = await readNativePortableAcceptance({ ...options, specChanges });
+  } catch {
+    return { drifted: true, reason: 'Native Shape artifacts changed or became invalid' };
+  }
+  const { acceptance } = shape;
   const expected = options.state.acceptance.map(({ source, text }) => ({ source, text }));
   if (!sameNativePortableAcceptance(expected, acceptance)) {
     return { drifted: true, reason: 'Native confirmed acceptance criteria changed' };
@@ -590,6 +767,24 @@ export async function inspectNativePortableAcceptanceDrift(options: {
     });
   } catch {
     return { drifted: true, reason: 'Native child declarations changed' };
+  }
+  if (
+    options.state.phase === 'shape' &&
+    options.state.status === 'await-user' &&
+    options.state.loop.next_action === 'confirm-shape' &&
+    options.state.shape_confirmation_hash === undefined
+  ) {
+    return { drifted: true, reason: 'Native Shape confirmation fingerprint is missing' };
+  }
+  if (
+    options.state.shape_confirmation_hash !== undefined &&
+    nativePortableShapeConfirmationHash({
+      formalHash: shape.formalHash,
+      childrenHash: children?.hash ?? null,
+      coordinationMode: options.state.coordination_mode,
+    }) !== options.state.shape_confirmation_hash
+  ) {
+    return { drifted: true, reason: 'Native Shape artifacts changed' };
   }
   const currentHash = children
     ? hashNativeParentContract({ acceptance, children: children.contract })
@@ -1948,6 +2143,22 @@ export async function confirmNativePortableSkillCoordinatedPass(options: {
         action: 'accept-result',
       });
       await ensureNativePortableAcceptanceCurrentLocked({ paths: options.paths, state });
+      const supervisor = await readNativeSupervisorState(options.paths, options.name);
+      if (supervisor?.finalVerification.status === 'pending') {
+        const advanced = advanceNativeSupervisorFinalVerificationHead(supervisor);
+        if (advanced.stateVersion !== supervisor.stateVersion) {
+          return returnNativePortableStateToFinalVerificationLocked({
+            paths: options.paths,
+            state,
+            reason:
+              'Supervisor final verification was not bound to the current integration commit; rerun the final full verification.',
+          });
+        }
+        await writeNativeSupervisorState(
+          options.paths,
+          recordNativeSupervisorPortableFinalVerification(supervisor, state),
+        );
+      }
       const next = confirmNativeSkillCoordinatedPass(state);
       const written = await writePortableMutation({ paths: options.paths, previous: state, next });
       await writeNativeLocalExecution(
@@ -1965,6 +2176,88 @@ export async function confirmNativePortableSkillCoordinatedPass(options: {
       });
       return written;
     },
+  );
+}
+
+export interface NativeSupervisorFinalVerificationResumeResult {
+  state: NativePortableState;
+  action: 'none' | 'rerun-final-verification' | 'recorded-final-verification';
+}
+
+export async function recoverNativeSupervisorFinalVerificationLocked(options: {
+  paths: NativeProjectPaths;
+  name: string;
+}): Promise<NativeSupervisorFinalVerificationResumeResult> {
+  const state = await readNativePortableChange(options.paths, options.name);
+  const supervisor = await readNativeSupervisorState(options.paths, options.name);
+  const transaction = await readNativePortableTransaction(options.paths, {
+    kind: 'archive',
+    change: options.name,
+  });
+  const archiveTransaction = transaction?.kind === 'archive' ? transaction : null;
+  if (archiveTransaction && supervisor?.finalVerification.status === 'pending') {
+    if (
+      archiveTransaction.journal.status !== 'prepared' ||
+      archiveTransaction.journal.next_spec_index !== 0
+    ) {
+      throw new Error(
+        'Native Supervisor final verification changed after Archive applied side effects; doctor intervention is required',
+      );
+    }
+    if (
+      state.phase === 'verify' &&
+      state.status === 'active' &&
+      state.verification === null &&
+      state.verification_result === 'pending' &&
+      state.loop.stage === 'verify-ready'
+    ) {
+      await fs.rm(archiveTransaction.file, { force: true });
+      return { state, action: 'rerun-final-verification' };
+    }
+  }
+  if (
+    state.archived ||
+    state.verification === null ||
+    state.verification_result !== 'pass' ||
+    supervisor?.finalVerification.status !== 'pending'
+  ) {
+    return { state, action: 'none' };
+  }
+
+  const advanced = advanceNativeSupervisorFinalVerificationHead(supervisor);
+  if (archiveTransaction || advanced.stateVersion !== supervisor.stateVersion) {
+    const recovered = await returnNativePortableStateToFinalVerificationLocked({
+      paths: options.paths,
+      state,
+      reason:
+        'Supervisor final verification was not bound to the current integration commit; the final full verification will resume automatically.',
+    });
+    if (archiveTransaction) {
+      await fs.rm(archiveTransaction.file, { force: true });
+    }
+    return { state: recovered, action: 'rerun-final-verification' };
+  }
+
+  await writeNativeSupervisorState(
+    options.paths,
+    recordNativeSupervisorPortableFinalVerification(supervisor, state),
+  );
+  return { state, action: 'recorded-final-verification' };
+}
+
+/**
+ * Repair an interrupted Supervisor final-verification write as part of normal
+ * Native continuation. No recovery flag or direct state edit is required.
+ */
+export async function recoverNativeSupervisorFinalVerificationOnResume(options: {
+  paths: NativeProjectPaths;
+  name: string;
+}): Promise<NativeSupervisorFinalVerificationResumeResult> {
+  return withNativeMutationLock(
+    options.paths,
+    `recover Supervisor final verification ${options.name}`,
+    () => recoverNativeSupervisorFinalVerificationLocked(options),
+    { allowedPortableTransaction: { kind: 'archive', change: options.name } },
   );
 }
 
@@ -2008,6 +2301,7 @@ export async function confirmNativePortableVerifierUnavailable(options: {
 export async function resolveNativePortableVerifierBlocker(options: {
   paths: NativeProjectPaths;
   name: string;
+  reason?: string;
   expectedContinuation?: NativePortableExpectedContinuation;
 }): Promise<NativePortableState> {
   return withNativeMutationLock(
@@ -2022,7 +2316,7 @@ export async function resolveNativePortableVerifierBlocker(options: {
       });
       await ensureNativePortableAcceptanceCurrentLocked({ paths: options.paths, state });
       const local = await readCurrentLocalExecution({ paths: options.paths, state });
-      const next = resolveNativeVerifierBlocker(state);
+      const next = resolveNativeVerifierBlocker(state, { reason: options.reason });
       const written = await writePortableMutation({ paths: options.paths, previous: state, next });
       await writeNativeLocalExecution(
         nativeLocalExecutionFile(options.paths, state.name),
@@ -2158,9 +2452,10 @@ export async function markNativePortableSpecRemoval(options: {
           no_progress_count: 0,
           execution_failure_count: 0,
           previous_unresolved_ids: [],
-          next_action: 'confirm-shape',
+          next_action: 'prepare-shape-confirmation',
         },
       };
+      delete next.shape_confirmation_hash;
       delete next.children_contract_hash;
       const written = await writePortableMutation({ paths: options.paths, previous: state, next });
       await writeNativeLocalExecution(
@@ -2283,10 +2578,62 @@ export async function returnNativePortableStateToShapeLocked(options: {
       no_progress_count: 0,
       execution_failure_count: 0,
       previous_unresolved_ids: [],
-      next_action: 'confirm-shape',
+      next_action: 'prepare-shape-confirmation',
     },
   };
+  delete next.shape_confirmation_hash;
   delete next.children_contract_hash;
+  const written = await writePortableMutation({ paths: options.paths, previous: state, next });
+  await writeNativeLocalExecution(
+    nativeLocalExecutionFile(options.paths, state.name),
+    rebuildNativeLocalExecution({
+      portableState: written,
+      projectRoot: options.paths.projectRoot,
+      branch: currentBranch(options.paths.projectRoot),
+    }),
+    { containedRoot: options.paths.runtimeDir },
+  );
+  return written;
+}
+
+export async function returnNativePortableStateToFinalVerificationLocked(options: {
+  paths: NativeProjectPaths;
+  state: NativePortableState;
+  reason: string;
+}): Promise<NativePortableState> {
+  const { state } = options;
+  if (state.archived) throw new Error(`Native change ${state.name} is already archived`);
+  if (state.verification === null || state.verification_result !== 'pass') {
+    throw new Error('Native Supervisor recovery requires a persisted final verification pass');
+  }
+  const withHistory = appendNativePortableHistory(state, {
+    goal_cycle: state.loop.goal_cycle,
+    iteration: state.loop.iteration,
+    attempt: state.loop.attempt,
+    outcome: 'recovery',
+    unresolved_ids: [],
+    summary: toNativePortableText(options.reason),
+    completed_at: new Date().toISOString(),
+  });
+  const next: NativePortableState = {
+    ...withHistory,
+    phase: 'verify',
+    status: 'active',
+    state_version: state.state_version + 1,
+    acceptance: state.acceptance.map((entry) => ({ ...entry, result: 'pending', reason: null })),
+    blockers: [],
+    verification: null,
+    verification_result: 'pending',
+    verification_report: null,
+    loop: {
+      ...state.loop,
+      stage: 'verify-ready',
+      execution_failure_count: 0,
+      previous_unresolved_ids: [],
+      no_progress_count: 0,
+      next_action: 'run-final-full-verification',
+    },
+  };
   const written = await writePortableMutation({ paths: options.paths, previous: state, next });
   await writeNativeLocalExecution(
     nativeLocalExecutionFile(options.paths, state.name),

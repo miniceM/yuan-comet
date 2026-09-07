@@ -43,14 +43,15 @@ import {
   parseNativeRunnerInput,
 } from '../../../domains/comet-native/native-runner-input.js';
 import {
-  confirmNativePortableShape,
   createNativePortableChange,
   nativePortableChangeDir,
   readNativePortableChange,
   inspectNativeSupervisorParentReviewReadiness,
   returnNativePortableChangeToShape,
 } from '../../../domains/comet-native/native-portable-runtime.js';
+import { confirmNativePortableShape } from '../../helpers/native-portable-confirmed-transition.js';
 import { inspectNativePortableStatus } from '../../../domains/comet-native/native-portable-status.js';
+import { nativeNextCommand } from '../../../domains/comet-native/native-next-command.js';
 
 const CONTRACT = parseNativeChildrenContract(`
 schema: comet.native.children.v2
@@ -123,6 +124,17 @@ describe('Native Supervisor v2 state', () => {
           checks: [{ name: 'integration test', status: 'passed' }],
         }),
       );
+      const integrationRoot = supervisor!.integration.worktree;
+      await fs.writeFile(path.join(integrationRoot, 'parent-fix.txt'), 'parent fix\n');
+      execFileSync('git', ['add', 'parent-fix.txt'], { cwd: integrationRoot });
+      execFileSync('git', ['commit', '-m', 'fix parent candidate'], { cwd: integrationRoot });
+      await fs.writeFile(path.join(integrationRoot, 'parent-follow-up.txt'), 'follow-up\n');
+      execFileSync('git', ['add', 'parent-follow-up.txt'], { cwd: integrationRoot });
+      execFileSync('git', ['commit', '-m', 'fix parent follow-up'], { cwd: integrationRoot });
+      const verifiedIntegrationHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: integrationRoot,
+        encoding: 'utf8',
+      }).trim();
 
       const advanced = await inspectNativeSupervisorParentReviewReadiness({
         paths,
@@ -167,7 +179,6 @@ describe('Native Supervisor v2 state', () => {
       expect(repeated.parentAdvance.advanced).toBe(false);
       expect(repeated.state.state_version).toBe(reviewed.state.state_version);
 
-      const integrationRoot = supervisor!.integration.worktree;
       const check = {
         id: 'integration-root',
         name: 'Check the integrated candidate',
@@ -250,9 +261,10 @@ describe('Native Supervisor v2 state', () => {
         ...location,
         verifierExecutionRef: dispatched.verifierDispatch!.verifierExecutionRef,
       });
-      expect((await readNativeSupervisorState(paths, 'parent'))!.finalVerification.status).toBe(
-        'pending',
-      );
+      expect(await readNativeSupervisorState(paths, 'parent')).toMatchObject({
+        integration: { headCommit: targetCommit },
+        finalVerification: { status: 'pending' },
+      });
       expect(requested.continuation.action).toBe('await-verifier');
 
       const verifiedParent = await applyNativeRunnerInput({
@@ -282,9 +294,101 @@ describe('Native Supervisor v2 state', () => {
         status: 'await-user',
         verification_result: 'pass',
       });
-      expect((await readNativeSupervisorState(paths, 'parent'))!.finalVerification).toMatchObject({
-        status: 'passed',
-        layers: { childVerification: 'complete', parentIntegration: 'complete' },
+      expect(await readNativeSupervisorState(paths, 'parent')).toMatchObject({
+        integration: { headCommit: verifiedIntegrationHead },
+        finalVerification: {
+          status: 'passed',
+          layers: { childVerification: 'complete', parentIntegration: 'complete' },
+        },
+      });
+      const interruptedSupervisor = (await readNativeSupervisorState(paths, 'parent'))!;
+      interruptedSupervisor.integration.headCommit = targetCommit;
+      interruptedSupervisor.finalVerification = { status: 'pending', summary: null };
+      await writeNativeSupervisorState(paths, interruptedSupervisor);
+
+      await fs.writeFile(path.join(integrationRoot, 'uncommitted-recovery.txt'), 'dirty\n');
+      await expect(
+        nativeNextCommand(['parent', '--summary', 'Resume with a dirty workspace.'], repository),
+      ).rejects.toThrow('integration worktree must be clean');
+      await fs.rm(path.join(integrationRoot, 'uncommitted-recovery.txt'));
+
+      const integrationBranch = execFileSync('git', ['branch', '--show-current'], {
+        cwd: integrationRoot,
+        encoding: 'utf8',
+      }).trim();
+      execFileSync('git', ['switch', '-c', 'recovery-wrong-branch'], { cwd: integrationRoot });
+      await expect(
+        nativeNextCommand(['parent', '--summary', 'Resume from the wrong branch.'], repository),
+      ).rejects.toThrow('integration branch mismatch');
+      execFileSync('git', ['switch', integrationBranch], { cwd: integrationRoot });
+
+      const divergentSupervisor = (await readNativeSupervisorState(paths, 'parent'))!;
+      divergentSupervisor.integration.headCommit = verifiedIntegrationHead;
+      await writeNativeSupervisorState(paths, divergentSupervisor);
+      execFileSync('git', ['reset', '--hard', targetCommit], { cwd: integrationRoot });
+      await fs.writeFile(path.join(integrationRoot, 'divergent-recovery.txt'), 'divergent\n');
+      execFileSync('git', ['add', 'divergent-recovery.txt'], { cwd: integrationRoot });
+      execFileSync('git', ['commit', '-m', 'create divergent recovery candidate'], {
+        cwd: integrationRoot,
+      });
+      await expect(
+        nativeNextCommand(['parent', '--summary', 'Resume a divergent workspace.'], repository),
+      ).rejects.toThrow('is not a descendant of the recorded integration head');
+      execFileSync('git', ['reset', '--hard', verifiedIntegrationHead], { cwd: integrationRoot });
+
+      await writeNativeSupervisorState(paths, interruptedSupervisor);
+      const resumed = await nativeNextCommand(
+        ['parent', '--summary', 'Continue the interrupted workflow.'],
+        repository,
+      );
+      expect(resumed).toMatchObject({
+        exitCode: 0,
+        data: {
+          state: {
+            phase: 'verify',
+            status: 'active',
+            verification_result: 'pending',
+            loop: { stage: 'verify-ready', next_action: 'run-final-full-verification' },
+          },
+          continuation: { action: 'dispatch-verifier' },
+        },
+      });
+      expect(await readNativeSupervisorState(paths, 'parent')).toMatchObject({
+        integration: { headCommit: targetCommit },
+        finalVerification: { status: 'pending' },
+      });
+      const redispatched = await applyNativeRunnerInput({
+        paths,
+        name: 'parent',
+        maxVerifyFailures: 5,
+        input: { kind: 'dispatch-verifier', checks: [check] },
+      });
+      await applyNativeRunnerInput({
+        paths,
+        name: 'parent',
+        maxVerifyFailures: 5,
+        input: {
+          kind: 'verifier-response',
+          response: {
+            kind: 'final-result',
+            result: {
+              iteration: redispatched.state.loop.iteration,
+              attempt: redispatched.state.loop.attempt,
+              verdict: 'pass',
+              acceptance: redispatched.state.acceptance.map(({ id }) => ({
+                id,
+                result: 'passed',
+                reason: 'The integrated behavior was reverified.',
+              })),
+              risks: [],
+              summary: 'Recovered parent integration verification passed.',
+            },
+          },
+        },
+      });
+      expect(await readNativeSupervisorState(paths, 'parent')).toMatchObject({
+        integration: { headCommit: verifiedIntegrationHead },
+        finalVerification: { status: 'passed' },
       });
     } finally {
       try {
@@ -1229,6 +1333,9 @@ children:
       git(['add', '.']);
       git(['commit', '-m', 'seed']);
       const targetCommit = git(['rev-parse', 'main']);
+      const targetRoot = path.join(repository, '.worktrees', 'main-target');
+      git(['switch', '-c', 'comet/parent']);
+      git(['worktree', 'add', targetRoot, 'main']);
       const prepared = await prepareNativeSupervisorIntegrationWorkspace({
         projectRoot: repository,
         parent: 'parent',
@@ -1290,9 +1397,9 @@ children:
         },
       });
       const paths = await nativeProjectPaths(repository, 'docs');
-      await fs.writeFile(path.join(repository, 'target-update.txt'), 'target moved\n');
-      execFileSync('git', ['add', '.'], { cwd: repository });
-      execFileSync('git', ['commit', '-m', 'target moved'], { cwd: repository });
+      await fs.writeFile(path.join(targetRoot, 'target-update.txt'), 'target moved\n');
+      execFileSync('git', ['add', '.'], { cwd: targetRoot });
+      execFileSync('git', ['commit', '-m', 'target moved'], { cwd: targetRoot });
       await expect(
         finalizeNativeSupervisorDelivery({ paths, state: finalVerified }),
       ).rejects.toThrow(/target changed|rerun/i);
@@ -1331,6 +1438,8 @@ children:
       expect(delivered.state.children[0]).toMatchObject({ status: 'archived' });
       expect(delivered.state.integration.headCommit).toBe(reverified.integration.headCommit);
       expect(git(['rev-parse', 'main'])).toBe(reverified.integration.headCommit);
+      expect(git(['branch', '--list', reverified.integration.branch])).toBe('');
+      expect(git(['branch', '--list', expectedChildBranch])).toBe('');
       const redelivered = await finalizeNativeSupervisorDelivery({
         paths,
         state: delivered.state,
@@ -1342,6 +1451,7 @@ children:
         for (const worktree of [
           path.join(repository, '.worktrees', 'parent-integration'),
           path.join(repository, '.worktrees', 'parent-integration-core'),
+          path.join(repository, '.worktrees', 'main-target'),
         ]) {
           try {
             execFileSync('git', ['worktree', 'remove', '--force', worktree], {
@@ -1767,6 +1877,314 @@ children:
         } catch {
           // Preserve the assertion failure when setup did not reach a worktree.
         }
+      }
+      await fs.rm(repository, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
+  });
+
+  it('reconfirms a repair child for failed Spec acceptance after returning to Shape', async () => {
+    const repository = await fs.mkdtemp(path.join(process.cwd(), '.tmp-supervisor-spec-repair-'));
+    try {
+      const git = (args: string[]) =>
+        execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
+      git(['init', '-b', 'main']);
+      git(['config', 'user.email', 'native@example.test']);
+      git(['config', 'user.name', 'Native Test']);
+      const config = defaultProjectConfig('docs', 'en');
+      config.workflows = ['native'];
+      config.default_workflow = 'native';
+      await writeProjectConfig(repository, config);
+      await fs.writeFile(path.join(repository, 'README.md'), 'seed\n');
+      git(['add', '.']);
+      git(['commit', '-m', 'seed']);
+
+      const paths = await nativeProjectPaths(repository, 'docs');
+      await ensureNativeDirectories(paths);
+      await createNativePortableChange({
+        paths,
+        name: 'parent',
+        language: 'en',
+        workspaceBinding: {
+          isolation: 'current',
+          changeBranch: 'main',
+          targetBranch: 'main',
+        },
+      });
+      const changeDir = nativePortableChangeDir(paths, 'parent');
+      await fs.writeFile(
+        path.join(changeDir, 'brief.md'),
+        '# Acceptance examples\n- The parent integration is complete.\n',
+      );
+      await fs.mkdir(path.join(changeDir, 'specs', 'repair'), { recursive: true });
+      await fs.writeFile(
+        path.join(changeDir, 'specs', 'repair', 'spec.md'),
+        `# Requirement: Repair
+The repaired behavior MUST be available.
+
+## Scenarios
+### Scenario: Repaired behavior
+- **WHEN** the repaired behavior is exercised
+- **THEN** it is available
+`,
+      );
+      await fs.writeFile(
+        path.join(changeDir, 'children.yaml'),
+        `schema: comet.native.children.v2
+acceptance_index:
+  A1:
+    source: brief.md
+    text: The parent integration is complete.
+children:
+  - name: core
+    depends_on: []
+    covers: [A1]
+  - name: support
+    depends_on: []
+    covers: []
+`,
+      );
+
+      const shaped = await confirmNativePortableShape({
+        paths,
+        name: 'parent',
+        coordinationMode: 'single-session',
+      });
+      const specAcceptance = shaped.acceptance.find(({ source }) => source !== shaped.brief);
+      expect(specAcceptance).toMatchObject({ source: 'specs/repair/spec.md' });
+      const targetCommit = git(['rev-parse', 'main']);
+      let supervisor = (await readNativeSupervisorState(paths, 'parent'))!;
+      for (const name of ['core', 'support']) {
+        supervisor = integrateNativeSupervisorChild(
+          markNativeSupervisorChildVerified(supervisor, {
+            name,
+            baseCommit: targetCommit,
+            verifiedCommit: targetCommit,
+            evidence: { summary: 'verified', checks: ['child test'] },
+          }),
+          {
+            name,
+            integrationCommit: targetCommit,
+            checks: [{ name: 'integration test', status: 'passed' }],
+          },
+        );
+      }
+      await writeNativeSupervisorState(paths, supervisor);
+      await inspectNativeSupervisorParentReviewReadiness({
+        paths,
+        name: 'parent',
+        trigger: 'v2-integrate',
+      });
+      const reviewed = await applyNativeRunnerInput({
+        paths,
+        name: 'parent',
+        maxVerifyFailures: 5,
+        input: parseNativeRunnerInput({
+          kind: 'builder-handoff',
+          summary: 'Reviewed the integrated parent candidate.',
+          addressed_acceptance_ids: shaped.acceptance.map(({ id }) => id),
+          checks: [],
+          known_limits: [],
+          review: {
+            status: 'passed',
+            summary: 'Independent parent review passed.',
+            reviewer_execution_ref: 'parent-review-run',
+          },
+        }),
+      });
+      const dispatched = await applyNativeRunnerInput({
+        paths,
+        name: 'parent',
+        maxVerifyFailures: 5,
+        input: {
+          kind: 'dispatch-verifier',
+          checks: [
+            {
+              id: 'parent-check',
+              name: 'Check the integrated parent',
+              executable: process.execPath,
+              argv: ['-e', 'process.exit(0)'],
+              cwdRef: '.',
+              timeoutMs: 120_000,
+              repeatable: true,
+            },
+          ],
+        },
+      });
+      const failed = await applyNativeRunnerInput({
+        paths,
+        name: 'parent',
+        maxVerifyFailures: 5,
+        input: {
+          kind: 'verifier-response',
+          response: {
+            kind: 'final-result',
+            result: {
+              iteration: dispatched.state.loop.iteration,
+              attempt: dispatched.state.loop.attempt,
+              verdict: 'fail',
+              acceptance: dispatched.state.acceptance.map(({ id }) => ({
+                id,
+                result: id === specAcceptance!.id ? 'failed' : 'passed',
+                reason: id === specAcceptance!.id ? 'The Spec behavior needs repair.' : 'Passed.',
+              })),
+              risks: [],
+              summary: 'The parent Spec acceptance needs a repair child.',
+            },
+          },
+        },
+      });
+      expect(reviewed.state).toMatchObject({ phase: 'verify' });
+      expect(failed.state).toMatchObject({
+        phase: 'build',
+        verification_result: 'fail',
+        loop: { stage: 'repairing', previous_unresolved_ids: [specAcceptance!.id] },
+      });
+
+      await fs.writeFile(
+        path.join(changeDir, 'children.yaml'),
+        `schema: comet.native.children.v2
+acceptance_index:
+  A1:
+    source: brief.md
+    text: The parent integration is complete.
+  ${specAcceptance!.id}:
+    source: ${specAcceptance!.source}
+    text: ${JSON.stringify(specAcceptance!.text)}
+children:
+  - name: core
+    depends_on: []
+    covers: [A1, ${specAcceptance!.id}]
+  - name: support
+    depends_on: []
+    covers: []
+`,
+      );
+      await nativeNextCommand(['parent', '--summary', 'Prepare the repair child.'], repository);
+      await expect(readNativePortableChange(paths, 'parent')).resolves.toMatchObject({
+        phase: 'shape',
+        acceptance: [],
+      });
+
+      await expect(
+        nativeNextCommand(
+          [
+            'parent',
+            '--summary',
+            'Prepare the invalid completed-child repair plan for confirmation.',
+          ],
+          repository,
+        ),
+      ).resolves.toMatchObject({
+        exitCode: 0,
+        data: { state: { phase: 'shape', status: 'await-user' } },
+      });
+      const invalidConfirmationState = await readNativePortableChange(paths, 'parent');
+
+      await expect(
+        nativeNextCommand(
+          [
+            'parent',
+            '--summary',
+            'Confirm an invalid completed-child repair plan.',
+            '--confirmed',
+            '--expected-state-version',
+            String(invalidConfirmationState.state_version),
+            '--expected-action',
+            'confirm-shape',
+          ],
+          repository,
+        ),
+      ).rejects.toThrow(/requires an unfinished child covering: A2/iu);
+
+      await fs.writeFile(
+        path.join(changeDir, 'children.yaml'),
+        `schema: comet.native.children.v2
+acceptance_index:
+  A1:
+    source: brief.md
+    text: The parent integration is complete.
+  ${specAcceptance!.id}:
+    source: ${specAcceptance!.source}
+    text: ${JSON.stringify(specAcceptance!.text)}
+children:
+  - name: core
+    depends_on: []
+    covers: [A1]
+  - name: support
+    depends_on: []
+    covers: []
+  - name: parent-integration-repair
+    depends_on: [core, support]
+    covers: [${specAcceptance!.id}]
+`,
+      );
+      await expect(
+        nativeNextCommand(
+          [
+            'parent',
+            '--summary',
+            'Try the changed repair child plan.',
+            '--confirmed',
+            '--expected-state-version',
+            String(invalidConfirmationState.state_version),
+            '--expected-action',
+            'confirm-shape',
+          ],
+          repository,
+        ),
+      ).rejects.toThrow(/Shape artifacts changed/iu);
+      await expect(
+        nativeNextCommand(
+          ['parent', '--summary', 'Prepare the changed repair child plan.'],
+          repository,
+        ),
+      ).resolves.toMatchObject({
+        exitCode: 0,
+        data: { state: { phase: 'shape', status: 'await-user' } },
+      });
+      const repairedConfirmationState = await readNativePortableChange(paths, 'parent');
+      await expect(
+        nativeNextCommand(
+          [
+            'parent',
+            '--summary',
+            'Confirm the repair child plan.',
+            '--confirmed',
+            '--expected-state-version',
+            String(repairedConfirmationState.state_version),
+            '--expected-action',
+            'confirm-shape',
+          ],
+          repository,
+        ),
+      ).resolves.toMatchObject({
+        exitCode: 0,
+        data: {
+          state: { phase: 'build' },
+          readyChildren: ['parent-integration-repair'],
+        },
+      });
+      await expect(readNativeSupervisorState(paths, 'parent')).resolves.toMatchObject({
+        children: [
+          expect.objectContaining({ name: 'core', status: 'integrated' }),
+          expect.objectContaining({ name: 'support', status: 'integrated' }),
+          expect.objectContaining({ name: 'parent-integration-repair', status: 'ready' }),
+        ],
+      });
+    } finally {
+      try {
+        execFileSync(
+          'git',
+          [
+            'worktree',
+            'remove',
+            '--force',
+            path.join(repository, '.worktrees', 'parent-integration'),
+          ],
+          { cwd: repository, stdio: 'ignore' },
+        );
+      } catch {
+        // Preserve the assertion failure when setup did not reach the integration worktree.
       }
       await fs.rm(repository, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }

@@ -28,6 +28,8 @@ import {
 } from '../../platform/fs/file-system.js';
 import {
   getPlatformConfigDir,
+  getPlatformConfigDirs,
+  getPlatformRuleBaseDirs,
   getPlatformSkillsDir,
   getPlatformSkillsDirs,
   type Platform,
@@ -41,6 +43,7 @@ import {
   isManagedHookCommand,
   removeManagedCopilotHookEntries,
   removeManagedHooksFromJsonFile,
+  removeManagedWindsurfHooksFromJsonFile,
   getCentralSkillsDir,
   OMP_HOOK_MARKER,
   OMP_HOOK_RELATIVE_PATH,
@@ -865,39 +868,37 @@ async function removeCometRulesForPlatform(
     return { removed: 0, failed: 0 };
   }
 
-  const skillsDir = getPlatformSkillsDir(platform, scope);
-  const rulesBase =
-    platform.rulesBaseDir !== undefined
-      ? platform.rulesBaseDir === ''
-        ? baseDir
-        : path.join(baseDir, platform.rulesBaseDir)
-      : path.join(baseDir, skillsDir);
+  const rulesBases = getPlatformRuleBaseDirs(platform, scope).map((rulesBase) =>
+    path.join(baseDir, rulesBase),
+  );
 
   let removed = 0;
   let failed = 0;
 
-  for (const ruleRelPath of rulePaths) {
-    const ruleFileName = path.basename(ruleRelPath);
-    const rulesDestDir = path.join(rulesBase, platform.rulesDir);
-    const dest = computeRuleDestPath(rulesDestDir, ruleFileName, platform.rulesFormat);
+  for (const rulesBase of new Set(rulesBases)) {
+    for (const ruleRelPath of rulePaths) {
+      const ruleFileName = path.basename(ruleRelPath);
+      const rulesDestDir = path.join(rulesBase, platform.rulesDir);
+      const dest = computeRuleDestPath(rulesDestDir, ruleFileName, platform.rulesFormat);
 
+      try {
+        const result = await removeFile(dest);
+        if (result) {
+          removed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    const rulesDestDir = path.join(rulesBase, platform.rulesDir);
     try {
-      const result = await removeFile(dest);
-      if (result) {
-        removed++;
+      if (await isDirEmpty(rulesDestDir)) {
+        await removeDir(rulesDestDir);
       }
     } catch {
       failed++;
     }
-  }
-
-  const rulesDestDir = path.join(rulesBase, platform.rulesDir);
-  try {
-    if (await isDirEmpty(rulesDestDir)) {
-      await removeDir(rulesDestDir);
-    }
-  } catch {
-    failed++;
   }
 
   return { removed, failed };
@@ -1194,8 +1195,22 @@ async function removeManagedHooksForPlatform(
         return await removeQwenStyleHooks(platformBase, scriptRelPaths);
       case 'gemini':
         return await removeGeminiHooks(platformBase, scriptRelPaths);
-      case 'windsurf':
-        return await removeWindsurfHooks(platformBase, scriptRelPaths);
+      case 'windsurf': {
+        let removed = 0;
+        let failed = 0;
+        for (const configDir of getPlatformConfigDirs(platform, scope)) {
+          let result: RemovalResult;
+          try {
+            result = await removeWindsurfHooks(path.join(baseDir, configDir), scriptRelPaths);
+          } catch {
+            failed++;
+            continue;
+          }
+          removed += result.removed;
+          failed += result.failed;
+        }
+        return { removed, failed };
+      }
       case 'trae':
         return await removeTraeHooks(platformBase, scriptRelPaths);
       case 'copilot':
@@ -1365,46 +1380,10 @@ async function removeWindsurfHooks(
   platformBase: string,
   scriptRelPaths: string[],
 ): Promise<RemovalResult> {
-  const hooksPath = path.join(platformBase, 'hooks.json');
-  if (!(await fileExists(hooksPath))) return { removed: 0, failed: 0 };
-  const readResult = await readJsonObjectFile(hooksPath);
-  if (readResult.status === 'missing') return { removed: 0, failed: 0 };
-  if (readResult.status === 'error') return { removed: 0, failed: 1 };
-  const hooksFile = readResult.value;
-
-  const existingHooks = hooksFile.hooks as Record<string, unknown> | undefined;
-  if (!existingHooks) {
-    return { removed: 0, failed: 0 };
-  }
-
-  const existingPreWrite = existingHooks.pre_write_code as
-    | Array<Record<string, unknown>>
-    | undefined;
-  if (!existingPreWrite || !Array.isArray(existingPreWrite)) {
-    return { removed: 0, failed: 0 };
-  }
-
-  let removed = 0;
-  const filtered = existingPreWrite.filter((entry) => {
-    if (isManagedHookCommand(entry.command, scriptRelPaths)) {
-      removed++;
-      return false;
-    }
-    return true;
-  });
-
-  if (filtered.length === 0) {
-    delete existingHooks.pre_write_code;
-  } else {
-    existingHooks.pre_write_code = filtered;
-  }
-
-  if (Object.keys(existingHooks).length === 0) {
-    delete hooksFile.hooks;
-  }
-
-  await writeFile(hooksPath, JSON.stringify(hooksFile, null, 2) + '\n', 'utf-8');
-  return { removed, failed: 0 };
+  return removeManagedWindsurfHooksFromJsonFile(
+    path.join(platformBase, 'hooks.json'),
+    scriptRelPaths,
+  );
 }
 
 async function removeTraeHooks(

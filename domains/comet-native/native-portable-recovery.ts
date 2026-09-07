@@ -10,6 +10,10 @@ import {
 } from './native-local-execution.js';
 import { withNativeMutationLock } from './native-mutation-lock.js';
 import {
+  inspectNativeSupervisorOverlay,
+  removeNativeSupervisorOverlayIfUnchanged,
+} from './native-supervisor-overlay.js';
+import {
   nativeLocalExecutionFile,
   nativePortableStateFile,
   ensureNativePortableReport,
@@ -36,11 +40,15 @@ export interface NativePortableRecoveryResult {
     | 'stale'
     | 'interrupted'
     | 'workspace-mismatch'
+    | 'overlay-incompatible'
     | 'done';
   message: string;
 }
 
-function workspaceMismatch(paths: NativeProjectPaths, state: NativePortableState): string | null {
+export function nativePortableWorkspaceMismatch(
+  paths: NativeProjectPaths,
+  state: NativePortableState,
+): string | null {
   const context = inspectGitWorktree(paths.projectRoot);
   if (state.workspace.change_branch !== null) {
     if (!context.isGitWorktree) return 'The portable change requires a Git branch/worktree';
@@ -134,7 +142,7 @@ export async function recoverNativePortableChange(options: {
           message: 'Archived Native changes do not require a local execution overlay.',
         };
       }
-      const mismatch = workspaceMismatch(options.paths, state);
+      const mismatch = nativePortableWorkspaceMismatch(options.paths, state);
       if (mismatch) {
         return {
           state,
@@ -143,6 +151,29 @@ export async function recoverNativePortableChange(options: {
           reason: 'workspace-mismatch',
           message: mismatch,
         };
+      }
+
+      const supervisorOverlay = await inspectNativeSupervisorOverlay({
+        paths: options.paths,
+        state,
+      });
+      if (supervisorOverlay.status === 'incompatible') {
+        return {
+          state,
+          local: null,
+          action: 'await-user',
+          reason: 'overlay-incompatible',
+          message: supervisorOverlay.message,
+        };
+      }
+      let repairedSupervisorOverlay = false;
+      if (supervisorOverlay.status === 'repairable-legacy-overlay') {
+        await removeNativeSupervisorOverlayIfUnchanged({
+          paths: options.paths,
+          state,
+          expected: supervisorOverlay,
+        });
+        repairedSupervisorOverlay = true;
       }
 
       const file = nativeLocalExecutionFile(options.paths, options.name);
@@ -182,7 +213,9 @@ export async function recoverNativePortableChange(options: {
           local: inspected.local,
           action: 'resume-stable-boundary',
           reason,
-          message: 'Native local execution overlay matches the portable state.',
+          message: repairedSupervisorOverlay
+            ? 'Removed a stale legacy Supervisor overlay and resumed the portable state.'
+            : 'Native local execution overlay matches the portable state.',
         };
       }
 

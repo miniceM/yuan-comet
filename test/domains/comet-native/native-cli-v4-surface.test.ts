@@ -103,6 +103,30 @@ None.
 Run applicable focused checks.
 `;
     await fs.writeFile(path.join(projectRoot, 'docs', 'comet', 'changes', name, 'brief.md'), brief);
+    const prepared = json(
+      await runNativeCli([
+        'next',
+        name,
+        '--summary',
+        'Shape is ready for confirmation',
+        '--json',
+        ...projectArgs(),
+      ]),
+    );
+    expect(prepared).toMatchObject({
+      exitCode: 0,
+      data: {
+        state: { phase: 'shape', status: 'await-user' },
+        continuation: {
+          disposition: 'await-user',
+          requiresUserDecision: true,
+          action: 'confirm-shape',
+          commandArgs: null,
+          userCommunication: { required: true },
+        },
+      },
+    });
+    const preparedState = prepared.data?.state as { state_version: number };
     const confirmed = json(
       await runNativeCli([
         'next',
@@ -110,6 +134,10 @@ Run applicable focused checks.
         '--summary',
         'Shared understanding confirmed',
         '--confirmed',
+        '--expected-state-version',
+        String(preparedState.state_version),
+        '--expected-action',
+        'confirm-shape',
         '--json',
         ...projectArgs(),
       ]),
@@ -220,10 +248,17 @@ Run applicable focused checks.
 
     expect(result.data?.continuation).toMatchObject({
       disposition: 'await-user',
-      action: 'confirm-shape',
-      requiredInputs: ['summary', 'coordination-choice', 'shared-understanding-confirmation'],
+      requiresUserDecision: true,
+      action: 'prepare-shape-confirmation',
+      requiredInputs: ['summary', 'coordination-choice'],
       userCommunication: { required: true, suggestedReply: '回复 A 或 B' },
     });
+    expect(result.data?.continuation.userCommunication.agentInstruction).toContain(
+      'prepare-shape-confirmation',
+    );
+    expect(result.data?.continuation.userCommunication.agentInstruction).not.toContain(
+      '--confirmed',
+    );
   });
 
   it.each([
@@ -271,7 +306,7 @@ Run applicable focused checks.
         schema: 'comet.native.v4',
         continuation: {
           schema: 'comet.native.continuation.v2',
-          action: 'confirm-shape',
+          action: 'prepare-shape-confirmation',
           runnerAction: { kind: 'none' },
         },
       },
@@ -285,7 +320,7 @@ Run applicable focused checks.
       expect(result.data).toMatchObject({
         continuation: {
           schema: 'comet.native.continuation.v2',
-          action: 'confirm-shape',
+          action: 'prepare-shape-confirmation',
           runnerAction: { kind: 'none' },
         },
       });
@@ -306,7 +341,7 @@ Run applicable focused checks.
       data: {
         continuation: {
           schema: 'comet.native.continuation.v2',
-          action: 'confirm-shape',
+          action: 'prepare-shape-confirmation',
           runnerAction: { kind: 'none' },
         },
       },
@@ -771,10 +806,10 @@ Run applicable focused checks.
             goal_cycle: 2,
             iteration: 0,
             attempt: 0,
-            next_action: 'confirm-shape',
+            next_action: 'prepare-shape-confirmation',
           },
         },
-        continuation: { action: 'confirm-shape' },
+        continuation: { action: 'prepare-shape-confirmation' },
       },
     });
 
@@ -800,7 +835,7 @@ Run applicable focused checks.
           status: 'active',
           acceptance: [],
           builder_handoff: null,
-          loop: { next_action: 'confirm-shape' },
+          loop: { next_action: 'prepare-shape-confirmation' },
         },
       },
     );
@@ -812,7 +847,7 @@ Run applicable focused checks.
       exitCode: 0,
       data: {
         ready: false,
-        continuation: { action: 'confirm-shape' },
+        continuation: { action: 'prepare-shape-confirmation' },
       },
     });
 
@@ -834,6 +869,21 @@ None.
 Run applicable focused checks.
 `;
     await fs.writeFile(path.join(projectRoot, 'docs', 'comet', 'changes', name, 'brief.md'), brief);
+    const updatedPrepared = json(
+      await runNativeCli([
+        'next',
+        name,
+        '--summary',
+        'Updated Shape is ready for confirmation',
+        '--json',
+        ...projectArgs(),
+      ]),
+    );
+    expect(updatedPrepared).toMatchObject({
+      exitCode: 0,
+      data: { state: { phase: 'shape', status: 'await-user' } },
+    });
+    const updatedPreparedState = updatedPrepared.data?.state as { state_version: number };
     const reconfirmed = json(
       await runNativeCli([
         'next',
@@ -841,6 +891,10 @@ Run applicable focused checks.
         '--summary',
         'Updated Shape confirmed',
         '--confirmed',
+        '--expected-state-version',
+        String(updatedPreparedState.state_version),
+        '--expected-action',
+        'confirm-shape',
         '--json',
         ...projectArgs(),
       ]),
@@ -936,10 +990,10 @@ Run applicable focused checks.
             goal_cycle: 2,
             iteration: 0,
             attempt: 0,
-            next_action: 'confirm-shape',
+            next_action: 'prepare-shape-confirmation',
           },
         },
-        continuation: { action: 'confirm-shape' },
+        continuation: { action: 'prepare-shape-confirmation' },
       },
     });
 
@@ -1047,13 +1101,27 @@ Run applicable focused checks.
           continuation: {
             disposition: 'await-user',
             action: 'confirm-verifier-unavailable',
+            commandArgs: null,
+            requiredInputs: ['summary', 'user-decision'],
+            commandAlternatives: expect.arrayContaining([
+              expect.objectContaining({
+                name: 'retry-verifier',
+                expectedAction: 'retry-verifier',
+                commandArgs: expect.arrayContaining(['--retry-verifier']),
+              }),
+              expect.objectContaining({
+                name: 'confirm-verifier-unavailable',
+                expectedAction: 'confirm-verifier-unavailable',
+                commandArgs: expect.arrayContaining(['--confirmed']),
+              }),
+            ]),
             userCommunication: {
               required: true,
               message:
-                '由于独立验收服务暂时不可用，目前只能完成自动检查。你可以选择接受当前检查结果，或者等验收服务恢复后再重试。',
-              suggestedReply: null,
+                '独立验收当前不可用，但你的代码和已经完成的检查都已安全保留。你可以直接重新尝试独立验收，也可以明确接受只有自动检查的结果。',
+              suggestedReply: '重新尝试独立验收',
               agentInstruction:
-                '向用户转述 message，并请用户明确选择是否接受只有自动检查的结果。不要把“继续”当作默认接受。',
+                '只向用户转述 message 和 suggestedReply，并等待用户选择。用户要求重试时执行 commandAlternatives 中的 retry-verifier；只有用户明确接受降级结果时才执行 confirm-verifier-unavailable。不要把“继续”视为接受降级结果，也不要要求用户处理文件、进程、服务或回调。',
             },
           },
         },
@@ -1100,6 +1168,73 @@ Run applicable focused checks.
       expect(confirmedReport).not.toContain('验证情况: **已完成独立验证**');
     },
   );
+
+  it('retries an unavailable Verifier with the same candidate and completed checks', async () => {
+    const name = 'retry-unavailable-verifier';
+    const counter = path.join(projectRoot, 'unavailable-retry-check-count.txt');
+    const check = {
+      id: 'runtime-pass',
+      name: 'Runtime pass',
+      executable: process.execPath,
+      argv: ['-e', `require('fs').appendFileSync(${JSON.stringify(counter)}, 'run\\n')`],
+      cwdRef: '.',
+      timeoutMs: 10_000,
+      repeatable: true,
+    };
+    await prepareBuild(name, ['First behavior works.'], 'zh-CN');
+    await runnerStep(name, builderHandoff(['A1']));
+    const firstDispatch = await runnerStep(name, { kind: 'dispatch-verifier', checks: [check] });
+    const firstCandidate = (firstDispatch.data as { verifierDispatch: { candidateId: string } })
+      .verifierDispatch.candidateId;
+    const unavailable = await runnerStep(name, {
+      kind: 'verifier-unavailable',
+      summary: 'The platform temporarily could not start an independent Agent.',
+    });
+    const unavailableStateVersion = (unavailable.data?.state as { state_version: number })
+      .state_version;
+
+    const retried = json(
+      await runNativeCli([
+        'next',
+        name,
+        '--summary',
+        'Retry independent verification',
+        '--retry-verifier',
+        '--expected-state-version',
+        String(unavailableStateVersion),
+        '--expected-action',
+        'retry-verifier',
+        '--json',
+        ...projectArgs(),
+      ]),
+    );
+    expect(retried).toMatchObject({
+      exitCode: 0,
+      data: {
+        state: {
+          phase: 'verify',
+          status: 'active',
+          verification_result: 'pending',
+          loop: {
+            stage: 'verify-ready',
+            retry_epoch: 1,
+            next_action: 'dispatch-new-verifier',
+          },
+        },
+        continuation: { action: 'dispatch-verifier' },
+      },
+    });
+
+    const secondDispatch = await runnerStep(name, { kind: 'dispatch-verifier', checks: [check] });
+    expect(secondDispatch).toMatchObject({
+      exitCode: 0,
+      data: {
+        checks: [expect.objectContaining({ id: 'runtime-pass', status: 'passed' })],
+        verifierDispatch: { candidateId: firstCandidate, attempt: 2 },
+      },
+    });
+    await expect(fs.readFile(counter, 'utf8')).resolves.toBe('run\n');
+  });
 
   it('rejects delayed generic Verifier errors and unavailable messages from an older attempt', async () => {
     const name = 'stale-generic-verifier-message';
@@ -1347,7 +1482,8 @@ Run applicable focused checks.
 
   it('resolves a semantic Verifier blocker with a new attempt and retained checks', async () => {
     const name = 'resolve-semantic-blocker';
-    await prepareBuild(name);
+    const acceptance = Array.from({ length: 40 }, (_, index) => `Behavior ${index + 1} works.`);
+    await prepareBuild(name, acceptance);
     await runnerStep(name, builderHandoff(['A1']));
     const counter = path.join(projectRoot, 'semantic-blocker-count.txt');
     const plan = {
@@ -1377,9 +1513,14 @@ Run applicable focused checks.
           iteration: 1,
           attempt: 1,
           verdict: 'blocked',
-          acceptance: [
-            { id: 'A1', result: 'blocked', reason: 'A user-visible choice is required.' },
-          ],
+          acceptance: acceptance.map((_, index) => ({
+            id: `A${index + 1}`,
+            result: 'blocked' as const,
+            reason:
+              index === 0
+                ? 'A user-visible choice is required.'
+                : 'Additional user context is required.',
+          })),
           risks: [],
           summary: 'Semantic verification needs a user decision.',
         },
@@ -1463,7 +1604,14 @@ Run applicable focused checks.
       exitCode: 0,
       data: {
         state: { loop: { iteration: 1, attempt: 2, retry_epoch: 1 } },
-        verifierDispatch: { iteration: 1, attempt: 2 },
+        verifierDispatch: {
+          iteration: 1,
+          attempt: 2,
+          recoveryContext: {
+            text: 'Retry semantic verification without implementation changes',
+            truncated: false,
+          },
+        },
       },
     });
     expect(await fs.readFile(counter, 'utf8')).toBe('1');

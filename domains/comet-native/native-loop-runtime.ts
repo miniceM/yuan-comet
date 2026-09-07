@@ -97,8 +97,15 @@ export function confirmNativePortableAcceptance(options: {
   acceptance: Array<Pick<NativePortableAcceptanceState, 'id' | 'source' | 'text'>>;
 }): NativePortableState {
   const state = parseNativePortableState(options.state);
-  if (state.phase !== 'shape' || state.status !== 'active') {
-    throw new Error('Native acceptance can only be confirmed from active Shape');
+  if (
+    state.phase !== 'shape' ||
+    state.status !== 'await-user' ||
+    state.loop.stage !== 'await-user' ||
+    state.loop.next_action !== 'confirm-shape'
+  ) {
+    throw new Error(
+      'Native acceptance can only be confirmed from the persisted Shape confirmation boundary',
+    );
   }
   if (options.acceptance.length === 0) {
     throw new Error('Native acceptance cannot be empty');
@@ -108,6 +115,7 @@ export function confirmNativePortableAcceptance(options: {
   return parseNativePortableState({
     ...state,
     phase: 'build',
+    status: 'active',
     state_version: nextVersion(state),
     loop: {
       ...state.loop,
@@ -115,6 +123,32 @@ export function confirmNativePortableAcceptance(options: {
       iteration: 1,
       attempt: 0,
       next_action: 'submit-builder-candidate',
+    },
+    acceptance: options.acceptance.map((entry) => ({ ...entry, result: 'pending', reason: null })),
+  });
+}
+
+export function prepareNativePortableShapeConfirmation(options: {
+  state: NativePortableState;
+  acceptance: Array<Pick<NativePortableAcceptanceState, 'id' | 'source' | 'text'>>;
+}): NativePortableState {
+  const state = parseNativePortableState(options.state);
+  if (state.phase !== 'shape' || state.status !== 'active' || state.loop.stage !== 'shape') {
+    throw new Error('Native Shape confirmation can only be prepared from active Shape');
+  }
+  if (options.acceptance.length === 0) {
+    throw new Error('Native acceptance cannot be empty');
+  }
+  const ids = options.acceptance.map(({ id }) => id);
+  if (new Set(ids).size !== ids.length) throw new Error('Native acceptance IDs must be unique');
+  return parseNativePortableState({
+    ...state,
+    status: 'await-user',
+    state_version: nextVersion(state),
+    loop: {
+      ...state.loop,
+      stage: 'await-user',
+      next_action: 'confirm-shape',
     },
     acceptance: options.acceptance.map((entry) => ({ ...entry, result: 'pending', reason: null })),
   });
@@ -427,6 +461,10 @@ export function applyNativeVerifierEnvelope(options: {
   const limitReached = failedIterationCount >= options.maxVerifyFailures;
   const stalled = noProgressCount >= 3;
   const stop = limitReached || stalled;
+  // A stagnation stop is more specific than a generic failure budget stop.
+  // Persist the decision so continuation text and the durable blocker cannot
+  // disagree when both thresholds are crossed by the same result.
+  const stopReason = stalled ? 'stalled' : limitReached ? 'budget' : undefined;
   const withHistory = appendNativePortableHistory(
     { ...state, acceptance, verification } as NativePortableState,
     historyEntry({
@@ -455,7 +493,7 @@ export function applyNativeVerifierEnvelope(options: {
             {
               owner: 'user',
               reason: toNativePortableText(
-                limitReached
+                stopReason === 'budget'
                   ? 'Native verification reached the configured failed iteration limit.'
                   : 'Native verification did not strictly reduce the unresolved acceptance set three times.',
               ),
@@ -482,6 +520,7 @@ export function applyNativeVerifierEnvelope(options: {
         attempt: stop ? state.loop.attempt : 0,
         failed_iteration_count: failedIterationCount,
         no_progress_count: noProgressCount,
+        ...(stopReason === undefined ? {} : { stop_reason: stopReason }),
         execution_failure_count: 0,
         previous_unresolved_ids: unresolvedIds,
         next_action: stop ? 'await-user' : 'repair-failed-acceptance',
@@ -654,7 +693,10 @@ export function confirmNativeVerifierUnavailable(options: {
   });
 }
 
-export function resolveNativeVerifierBlocker(stateInput: NativePortableState): NativePortableState {
+export function resolveNativeVerifierBlocker(
+  stateInput: NativePortableState,
+  options?: { reason?: string; now?: Date },
+): NativePortableState {
   const state = parseNativePortableState(stateInput);
   if (
     state.phase !== 'verify' ||
@@ -670,8 +712,21 @@ export function resolveNativeVerifierBlocker(stateInput: NativePortableState): N
   ) {
     throw new Error('Native change is not awaiting resolution of a semantic Verifier blocker');
   }
+  // The user's resolution context is the only place the next Verifier round
+  // can learn what information unblocked the semantic judgment, so it must be
+  // persisted in history instead of dying with the command invocation.
+  const withHistory = appendNativePortableHistory(
+    state,
+    historyEntry({
+      state,
+      outcome: 'recovery',
+      summary:
+        options?.reason ?? 'Resolved the semantic Verifier blocker and resumed verification.',
+      completedAt: (options?.now ?? new Date()).toISOString(),
+    }),
+  );
   return parseNativePortableState({
-    ...state,
+    ...withHistory,
     status: 'active',
     state_version: nextVersion(state),
     verification_result: 'pending',
@@ -744,23 +799,43 @@ export function recordNativeVerifierExecutionError(options: {
 
 export function retryNativeVerifier(stateInput: NativePortableState): NativePortableState {
   const state = parseNativePortableState(stateInput);
-  if (
-    state.phase !== 'verify' ||
-    state.status !== 'blocked' ||
-    !state.blockers.some(({ resolution_action }) => resolution_action === 'retry-verifier')
-  ) {
+  const executionBlocked =
+    state.status === 'blocked' &&
+    state.blockers.some(({ resolution_action }) => resolution_action === 'retry-verifier');
+  const verifierUnavailable =
+    state.status === 'await-user' &&
+    state.verification_result === 'blocked' &&
+    state.verification?.assurance === 'semantic-verification-unavailable' &&
+    state.loop.stage === 'await-user' &&
+    state.loop.next_action === 'confirm-verifier-unavailable' &&
+    state.blockers.some(
+      ({ resolution_action }) => resolution_action === 'confirm-verifier-unavailable',
+    );
+  if (state.phase !== 'verify' || (!executionBlocked && !verifierUnavailable)) {
     throw new Error('Native change is not blocked on Verifier infrastructure');
   }
+  const unresolvedIds = pendingAcceptanceIds(state);
+  const hasCompletedAcceptance = state.acceptance.some(({ result }) => result === 'passed');
   return parseNativePortableState({
     ...state,
     status: 'active',
     state_version: nextVersion(state),
+    ...(verifierUnavailable
+      ? {
+          verification_result: 'pending' as const,
+          verification_report: null,
+          verification: null,
+        }
+      : {}),
     blockers: [],
     loop: {
       ...state.loop,
       stage: 'verify-ready',
       retry_epoch: state.loop.retry_epoch + 1,
       execution_failure_count: 0,
+      ...(verifierUnavailable
+        ? { previous_unresolved_ids: hasCompletedAcceptance ? unresolvedIds : [] }
+        : {}),
       next_action: 'dispatch-new-verifier',
     },
   });
@@ -811,6 +886,7 @@ export function returnNativeCandidateToBuild(options: {
       iteration: state.loop.iteration + 1,
       attempt: 0,
       execution_failure_count: 0,
+      stop_reason: undefined,
       next_action: 'submit-builder-candidate',
     },
   });
