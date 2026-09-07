@@ -51,16 +51,20 @@ vi.mock('child_process', async (importOriginal) => {
   };
 });
 
-vi.mock('../../platform/version/version.js', () => ({
-  getCurrentVersion: vi.fn(() => '0.4.0-beta.7'),
-  getLatestVersion: vi.fn(async () => '0.4.0-beta.8'),
-  printVersionInfo: vi.fn(async () => ({
-    currentVersion: '0.4.0-beta.7',
-    latestVersion: '0.4.0-beta.8',
-    hasUpdate: true,
-    checked: true,
-  })),
-}));
+vi.mock('../../platform/version/version.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../platform/version/version.js')>();
+  return {
+    ...actual,
+    getCurrentVersion: vi.fn(() => '0.4.0-beta.7'),
+    getLatestVersion: vi.fn(async () => '0.4.0-beta.8'),
+    printVersionInfo: vi.fn(async () => ({
+      currentVersion: '0.4.0-beta.7',
+      latestVersion: '0.4.0-beta.8',
+      hasUpdate: true,
+      checked: true,
+    })),
+  };
+});
 
 vi.mock('../../domains/integrations/openspec.js', () => ({
   installOpenSpec: vi.fn(async () => 'installed'),
@@ -210,6 +214,7 @@ async function arrangeComponentFailure(
 
 describe('update command helpers', () => {
   let tmpDir: string;
+  let defaultHomedirSpy: ReturnType<typeof vi.spyOn>;
   let fakeGlobalNpmRoot: string;
   let candidateVersionOverride: string | null;
   let candidateCommandFailure: string | null;
@@ -230,6 +235,9 @@ describe('update command helpers', () => {
       `comet-update-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     await fs.mkdir(tmpDir, { recursive: true });
+    const defaultHome = path.join(tmpDir, 'default-home');
+    await fs.mkdir(defaultHome, { recursive: true });
+    defaultHomedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(defaultHome);
     fakeGlobalNpmRoot = path.join(tmpDir, 'global node_modules & safe');
     await writeFakeCometPackage(path.join(fakeGlobalNpmRoot, '@rpamis', 'comet'), '0.4.0-beta.7');
     candidateVersionOverride = null;
@@ -392,7 +400,12 @@ describe('update command helpers', () => {
   });
 
   afterEach(async () => {
+    defaultHomedirSpy.mockRestore();
     await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('isolates the default installation registry in the test home', () => {
+    expect(os.homedir()).toBe(path.join(tmpDir, 'default-home'));
   });
 
   it('detects Chinese installed comet skills from existing skill content', async () => {
@@ -1044,6 +1057,10 @@ describe('update command helpers', () => {
     });
     expect(resolveNpmSelfUpdatePlan('0.4.0-alpha.1', '0.4.0-alpha.beta')).toMatchObject({
       action: 'update',
+    });
+    expect(resolveNpmSelfUpdatePlan('0.4.0-beta.20', '0.4.0-rc.1')).toEqual({
+      action: 'update',
+      version: '0.4.0-rc.1',
     });
 
     const project = path.join(tmpDir, 'package-scope');
@@ -2010,6 +2027,77 @@ describe('update command helpers', () => {
 
     await expect(fs.readFile(globalSkill, 'utf8')).resolves.toBe('# Stale global Comet\n');
     expect(output!).toContain('No indexed Comet projects found');
+  });
+
+  it('updates global targets when bare update starts from Home', async () => {
+    const fakeHome = path.join(tmpDir, 'fake-home-bare-global');
+    const projectConfig = defaultProjectConfig('docs', 'en');
+    await fs.mkdir(path.join(fakeHome, '.comet'), { recursive: true });
+    await fs.writeFile(
+      path.join(fakeHome, '.comet', 'config.yaml'),
+      JSON.stringify({ ...projectConfig, schema: 'comet.global.v1' }),
+      'utf8',
+    );
+    await fs.mkdir(path.join(fakeHome, '.claude', 'skills', 'comet'), { recursive: true });
+    await fs.writeFile(
+      path.join(fakeHome, '.claude', 'skills', 'comet', 'SKILL.md'),
+      '# Stale global Comet\n',
+      'utf8',
+    );
+
+    const homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      await expect(
+        updateCommand(fakeHome, { json: true, skipNpm: true, installMode: 'copy' }),
+      ).resolves.toMatchObject({ status: 'complete' });
+    } finally {
+      log.mockRestore();
+      homedirSpy.mockRestore();
+    }
+
+    await expect(
+      fs.readFile(path.join(fakeHome, '.claude', 'skills', 'comet', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('comet workflow resolve');
+  });
+
+  it('updates Home global targets even when another project is indexed', async () => {
+    const fakeHome = path.join(tmpDir, 'fake-home-bare-global-with-index');
+    const indexedProject = path.join(tmpDir, 'indexed-project-for-global-update');
+    const projectConfig = defaultProjectConfig('docs', 'en');
+    await fs.mkdir(path.join(fakeHome, '.comet'), { recursive: true });
+    await fs.writeFile(
+      path.join(fakeHome, '.comet', 'config.yaml'),
+      JSON.stringify({ ...projectConfig, schema: 'comet.global.v1' }),
+      'utf8',
+    );
+    await fs.mkdir(path.join(fakeHome, '.claude', 'skills', 'comet'), { recursive: true });
+    await fs.writeFile(
+      path.join(fakeHome, '.claude', 'skills', 'comet', 'SKILL.md'),
+      '# Stale global Comet\n',
+      'utf8',
+    );
+    await upsertProjectInstallation(
+      indexedProject,
+      [{ platform: 'claude', language: 'en' }],
+      'init',
+      { homeDir: fakeHome },
+    );
+
+    const homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      await expect(
+        updateCommand(fakeHome, { json: true, skipNpm: true, installMode: 'copy' }),
+      ).resolves.toMatchObject({ status: 'complete' });
+    } finally {
+      log.mockRestore();
+      homedirSpy.mockRestore();
+    }
+
+    await expect(
+      fs.readFile(path.join(fakeHome, '.claude', 'skills', 'comet', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('comet workflow resolve');
   });
 
   it('refreshes the project registry after a successful current-project update', async () => {
@@ -4007,6 +4095,49 @@ describe('update command helpers', () => {
       (t: { platform: string }) => t.platform === 'codex',
     );
     expect(codexSkills?.skipped).toBeGreaterThan(0);
+  });
+
+  it('preserves a legacy global Windsurf Native-only selection while migrating to Devin', async () => {
+    const fakeHome = path.join(tmpDir, 'legacy-windsurf-native-update-home');
+    await fs.mkdir(path.join(fakeHome, '.windsurf', 'skills', 'comet'), { recursive: true });
+    await fs.writeFile(
+      path.join(fakeHome, '.windsurf', 'skills', 'comet', 'SKILL.md'),
+      '# Stale Comet\n',
+      'utf8',
+    );
+    await fs.mkdir(path.join(fakeHome, '.windsurf', 'skills', 'comet-native'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(fakeHome, '.windsurf', 'skills', 'comet-native', 'SKILL.md'),
+      '---\nname: comet-native\n---\n# STALE\n',
+      'utf8',
+    );
+
+    const homeSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      await updateCommand(tmpDir, {
+        json: true,
+        skipNpm: true,
+        scope: 'global',
+        platform: 'windsurf',
+        installMode: 'copy',
+      });
+    } finally {
+      log.mockRestore();
+      homeSpy.mockRestore();
+    }
+
+    await expect(
+      fs.readFile(path.join(fakeHome, '.devin', 'skills', 'comet-native', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('name: comet-native');
+    await expect(
+      fs.access(path.join(fakeHome, '.devin', 'skills', 'comet-classic', 'SKILL.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      fs.access(path.join(fakeHome, '.windsurf', 'skills', 'comet-native', 'SKILL.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('preserves installed language for an explicit global platform update', async () => {

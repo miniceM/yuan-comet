@@ -8,6 +8,7 @@ export const NATIVE_SUPERVISOR_COORDINATION_MODES = ['multi-session', 'single-se
 export type NativeSupervisorCoordinationMode =
   (typeof NATIVE_SUPERVISOR_COORDINATION_MODES)[number];
 export type NativePortableVerificationResult = 'pending' | 'pass' | 'fail' | 'blocked';
+export type NativePortableLoopStopReason = 'budget' | 'stalled';
 export type NativePortableVerificationAssurance =
   | 'host-attested'
   | 'skill-coordinated'
@@ -15,11 +16,7 @@ export type NativePortableVerificationAssurance =
   | 'user-confirmed-degraded';
 export type NativePortableAcceptanceResult = 'pending' | 'passed' | 'failed' | 'blocked';
 export type NativePortableHistoryOutcome =
-  | 'pass'
-  | 'fail'
-  | 'blocked'
-  | 'execution-error'
-  | 'recovery';
+  'pass' | 'fail' | 'blocked' | 'execution-error' | 'recovery';
 
 export interface NativePortableText {
   text: string;
@@ -55,6 +52,8 @@ export interface NativePortableLoopState {
   retry_epoch: number;
   failed_iteration_count: number;
   no_progress_count: number;
+  /** Set only when the Runtime pauses the repair loop for a bounded stop. */
+  stop_reason?: NativePortableLoopStopReason;
   execution_failure_count: number;
   previous_unresolved_ids: string[];
   next_action: string | null;
@@ -157,6 +156,7 @@ export interface NativePortableState {
   status: NativePortableStatus;
   state_version: number;
   brief: 'brief.md';
+  shape_confirmation_hash?: string;
   children_contract_hash?: string;
   coordination_mode?: NativeSupervisorCoordinationMode;
   spec_changes: NativePortableSpecChange[];

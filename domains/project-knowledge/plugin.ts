@@ -28,6 +28,7 @@ import {
   type ProjectKnowledgeRecordVerification,
 } from './records.js';
 import { RemoteProjectKnowledgeProvider } from './remote-provider.js';
+import { ensureProjectKnowledgeReady } from './readiness.js';
 import {
   createProjectKnowledgeChangedHint,
   ProjectKnowledgeLearningService,
@@ -40,6 +41,7 @@ import type {
   ProjectKnowledgeQueryResult,
   ProjectKnowledgeResult,
 } from './types.js';
+import { ProjectKnowledgeHostReview } from './host-review.js';
 import { resolveProjectKnowledgeStorageLocation } from '../../platform/paths/project-knowledge-storage.js';
 import { resolveStableProjectId } from '../../platform/paths/project-identity.js';
 import { RaceSafeReadError } from '../../platform/fs/race-safe-read.js';
@@ -213,7 +215,9 @@ async function createProjectKnowledgeModule(
         projectRoot: options.projectRoot,
         provider: learningProvider,
         language: options.language,
-        ...(options.semanticReviewer ? { reviewer: options.semanticReviewer } : {}),
+        reviewer:
+          options.semanticReviewer ??
+          new ProjectKnowledgeHostReview(options.projectRoot, options.cacheRoot),
         reportDiagnostic,
       });
       return await learning.reflectEvent(event);
@@ -222,31 +226,12 @@ async function createProjectKnowledgeModule(
     }
   };
   const ensureProjectModel = async (provider: ProjectKnowledgeProvider): Promise<void> => {
-    const projectId = resolveStableProjectId(options.projectRoot);
-    const listed = await provider.query({ kind: 'list', projectId, state: 'all', limit: 500 });
-    if (
-      listed.kind === 'list' &&
-      listed.records.some(
-        (record) =>
-          record.state !== 'superseded' && ['topology', 'fact', 'dependency'].includes(record.type),
-      )
-    ) {
-      return;
-    }
-    const corpus =
-      options.knowledgeConfig.provider === 'local'
-        ? await discoverProjectKnowledgeCorpus({
-            projectRoot: options.projectRoot,
-            reportDiagnostic,
-          })
-        : [];
-    const learning = new ProjectKnowledgeLearningService({
+    await ensureProjectKnowledgeReady({
       projectRoot: options.projectRoot,
       provider,
       language: options.language,
       reportDiagnostic,
     });
-    await learning.bootstrapProjectModel(corpus.map((document) => document.source));
   };
   const persistChangedHint = async (hint: ProjectKnowledgeChangedHint): Promise<void> => {
     recentChangedHints.push(hint);
@@ -263,10 +248,17 @@ async function createProjectKnowledgeModule(
         config: options.knowledgeConfig,
         language: options.language,
       });
-      snapshotProvider = await createProvider({ discoverCorpus: false });
+      snapshotProvider = await createProvider();
       const activeProvider = snapshotProvider;
+      const projectId = resolveStableProjectId(options.projectRoot);
+      await ensureProjectModel(activeProvider);
       const status = await activeProvider.status();
-      const recordsResult = await activeProvider.query({ kind: 'list', state: 'all', limit: 100 });
+      const recordsResult = await activeProvider.query({
+        kind: 'list',
+        projectId,
+        state: 'all',
+        limit: 100,
+      });
       const records = recordsResult.kind === 'list' ? recordsResult.records : [];
       const applications = (await options.listContextApplications?.()) ?? [];
       const dashboardRecords = records.map((record) => ({
@@ -300,16 +292,54 @@ async function createProjectKnowledgeModule(
           ) === index
         );
       });
+      let pendingHostReviewCount = 0;
+      if (!options.semanticReviewer) {
+        try {
+          pendingHostReviewCount = (
+            await new ProjectKnowledgeHostReview(options.projectRoot, options.cacheRoot).pending()
+          ).length;
+        } catch (error) {
+          const diagnostic = {
+            code: 'host-review-unavailable',
+            message: `待评审知识暂不可用：${error instanceof Error ? error.message : String(error)}`,
+          };
+          reportDiagnostic(diagnostic);
+          diagnostics.push(diagnostic);
+        }
+      }
       const result = {
         ...snapshot,
+        pendingHostReviewCount,
         status,
         records: dashboardRecords,
         counts: {
-          trial: records.filter((record) => record.state === 'trial').length,
-          proven: records.filter((record) => record.state === 'proven').length,
-          enforced: records.filter((record) => record.state === 'enforced').length,
-          superseded: records.filter((record) => record.state === 'superseded').length,
+          active:
+            recordsResult.kind === 'list' && recordsResult.counts
+              ? recordsResult.counts.active
+              : records.filter((record) => record.state !== 'superseded').length,
+          trial:
+            recordsResult.kind === 'list' && recordsResult.counts
+              ? recordsResult.counts.trial
+              : records.filter((record) => record.state === 'trial').length,
+          proven:
+            recordsResult.kind === 'list' && recordsResult.counts
+              ? recordsResult.counts.proven
+              : records.filter((record) => record.state === 'proven').length,
+          enforced:
+            recordsResult.kind === 'list' && recordsResult.counts
+              ? recordsResult.counts.enforced
+              : records.filter((record) => record.state === 'enforced').length,
+          superseded:
+            recordsResult.kind === 'list' && recordsResult.counts
+              ? recordsResult.counts.superseded
+              : records.filter((record) => record.state === 'superseded').length,
+          total:
+            recordsResult.kind === 'list' && recordsResult.counts
+              ? recordsResult.counts.total
+              : records.length,
+          displayed: records.length,
         },
+        truncated: recordsResult.kind === 'list' ? recordsResult.truncated : false,
         manifestPreview: currentManifest.flatMap((application) => {
           const record = recordsById.get(application.candidateId);
           const history = applications.filter(
@@ -361,16 +391,23 @@ async function createProjectKnowledgeModule(
         local:
           options.knowledgeConfig.provider === 'local'
             ? {
-                available: status.healthy,
+                available: status.healthy && localIndexStatus?.available === true,
                 repositoryId: location.repositoryId,
                 workspaceId: location.workspaceId,
                 sourceCount: localIndexStatus?.sourceCount ?? 0,
                 sources: localIndexStatus?.sources ?? [],
                 sectionCount: localIndexStatus?.sectionCount ?? 0,
+                ...(localIndexStatus?.lastQueryMs === undefined
+                  ? {}
+                  : { lastQueryMs: localIndexStatus.lastQueryMs }),
+                ...(localIndexStatus?.lastCandidateCount === undefined
+                  ? {}
+                  : { lastCandidateCount: localIndexStatus.lastCandidateCount }),
                 ...((localIndexStatus?.updatedAt ?? status.updatedAt)
                   ? { updatedAt: localIndexStatus?.updatedAt ?? status.updatedAt }
                   : {}),
                 channels: localIndexStatus?.channels ?? ['records', 'sections'],
+                truncated: recordsResult.kind === 'list' ? recordsResult.truncated : false,
               }
             : undefined,
         diagnostics: diagnostics.slice(-MAX_RECENT_DIAGNOSTICS),
@@ -537,6 +574,8 @@ async function createProjectKnowledgeModule(
           }
         }
         activeProvider = await createProvider();
+        if (capability === 'list' || capability === 'query')
+          await ensureProjectModel(activeProvider);
         if (capability === 'list') {
           const state = value.state;
           return await activeProvider.query({
@@ -793,7 +832,18 @@ function projectKnowledgeContextCandidate(
       authority: record.authority === 'automatic' ? 'inferred' : record.authority,
       title: record.title,
       summary: record.summary,
-      content: record.summary,
+      content: [
+        record.summary,
+        `Applicable paths: ${record.applicablePaths.join(', ') || '*'}`,
+        `Operations: ${record.operations.join(', ') || '*'}`,
+        `Phases: ${(record.phases ?? []).join(', ') || '*'}`,
+        ...record.conclusions.map(
+          (conclusion) =>
+            `- ${conclusion.text}\n  Sources: ${conclusion.sources
+              .map((source) => [source.source, source.anchor].filter(Boolean).join('#'))
+              .join(', ')}`,
+        ),
+      ].join('\n'),
       selectors: {
         projectId: record.projectId,
         paths: record.applicablePaths,

@@ -11,39 +11,28 @@ describe('README assets', () => {
     expect(content).toContain('https://github.com/rpamis/comet/blob/master/img/');
   });
 
-  it('documents build_pause in README state examples and field descriptions', async () => {
-    const en = await fs.readFile('README.md', 'utf-8');
-    const zh = await fs.readFile('README-zh.md', 'utf-8');
+  it('keeps the README focused and starts Quick Start with project initialization', async () => {
+    const readmeEn = await fs.readFile('README.md', 'utf-8');
+    const readmeZh = await fs.readFile('README-zh.md', 'utf-8');
 
-    expect(en).toContain('build_pause: null');
-    expect(en).toContain('`build_pause` records an internal build-phase pause point');
-    expect(en).toContain('`plan-ready` means the plan has been generated');
+    for (const heading of ['## Commands', '## Skills', '## Workflow', '## Project Structure']) {
+      expect(readmeEn).not.toContain(heading);
+    }
+    for (const heading of ['## CLI命令', '## 技能', '## 工作流', '## 项目结构']) {
+      expect(readmeZh).not.toContain(heading);
+    }
 
-    expect(zh).toContain('build_pause: null');
-    expect(zh).toContain('`build_pause` 记录 build 阶段内部暂停点');
-    expect(zh).toContain('`plan-ready` 表示 plan 已生成');
-  });
-
-  it('documents Ambient Resume probe and managed project instructions', async () => {
-    const en = await fs.readFile('README.md', 'utf-8');
-    const zh = await fs.readFile('README-zh.md', 'utf-8');
-
-    expect(en).toContain('comet resume-probe [path]');
-    expect(en).toContain('managed block');
-    expect(en).toContain('<comet-ambient-resume>');
-    expect(en).toContain('preserving user-authored rules');
-    expect(zh).toContain('comet resume-probe [path]');
-    expect(zh).toContain('managed block');
-    expect(zh).toContain('<comet-ambient-resume>');
-    expect(zh).toContain('保留用户已有规则');
-  });
-
-  it('documents status and doctor as diagnostics-aware user commands', async () => {
-    const readme = await fs.readFile('README.md', 'utf-8');
-
-    expect(readme).toContain('runtime mode');
-    expect(readme).toContain('current step');
-    expect(readme).toContain('diagnostic');
+    const quickStartEn =
+      readmeEn.split('## Quick Start')[1]?.split('### Project configuration')[0] ?? '';
+    const quickStartZh = readmeZh.split('## 快速开始')[1]?.split('### 项目配置')[0] ?? '';
+    expect(quickStartEn).toContain('cd your-project');
+    expect(quickStartEn).toContain('comet init');
+    expect(quickStartEn).not.toContain('comet init --scope global');
+    expect(quickStartZh).toContain('cd your-project');
+    expect(quickStartZh).toContain('comet init');
+    expect(quickStartZh).not.toContain('comet init --scope global');
+    expect(readmeEn).toContain('`comet init` supports 37 AI coding platforms:');
+    expect(readmeZh).toContain('`comet init` 支持 37 个 AI 编码平台：');
   });
 
   it('keeps English and Chinese README feature summaries aligned', async () => {
@@ -150,58 +139,6 @@ describe('README assets', () => {
       expect(readme).not.toMatch(/!\[[^\]]*\]\(img\/[a-z0-9-]+\.mp4\)/u);
       expect(readme).not.toContain('-preview.png');
     }
-  });
-
-  it('documents Native and Classic skills and keeps both project structures folded', async () => {
-    const readmeEn = await fs.readFile('README.md', 'utf-8');
-    const readmeZh = await fs.readFile('README-zh.md', 'utf-8');
-    const skillsEn = readmeEn.split('### Comet Skills')[1]?.split('</details>')[0] ?? '';
-    const skillsZh = readmeZh.split('### Comet 技能')[1]?.split('</details>')[0] ?? '';
-
-    expect(skillsEn).toContain('| `/comet-native`');
-    expect(skillsEn).toContain('| `/comet-classic`');
-    expect(skillsZh).toContain('| `/comet-native`');
-    expect(skillsZh).toContain('| `/comet-classic`');
-    expect(readmeEn).toContain('<summary>Native project structure');
-    expect(readmeEn).toContain('<summary>Classic project structure');
-    expect(readmeZh).toContain('<summary>Native 项目结构');
-    expect(readmeZh).toContain('<summary>Classic 项目结构');
-    expect(readmeEn).toContain('<summary>View the Native phase flow');
-    expect(readmeEn).toContain('<summary>View Native state and artifacts');
-    expect(readmeEn).toContain('<summary>View Native reliability and recovery');
-    expect(readmeZh).toContain('<summary>查看 Native 阶段流程');
-    expect(readmeZh).toContain('<summary>查看 Native 状态与产物');
-    expect(readmeZh).toContain('<summary>查看 Native 可靠性与恢复');
-  });
-
-  it('documents task-first paths for comet-any and eval without making Bundle CLI the default user path', async () => {
-    const readmeEn = await fs.readFile('README.md', 'utf-8');
-    const readmeZh = await fs.readFile('README-zh.md', 'utf-8');
-
-    expect(readmeEn).toContain('Create or optimize a reusable Skill');
-    expect(readmeEn).toContain('`/comet-any` is an optional Skill creation and composition path');
-    expect(readmeEn).toContain('`comet eval`');
-    expect(readmeEn).toContain('`comet creator`');
-    expect(readmeEn).toContain('`comet publish`');
-    expect(readmeEn).toContain('`comet creator status` / `comet creator next`');
-    expect(readmeEn).toContain('`comet publish distribute --preview`');
-    expect(readmeEn).toContain('stable composed Skill');
-    expect(readmeEn).toContain('Advanced Bundle backend');
-    expect(readmeEn).toContain('Advanced Engine Run');
-    expect(readmeEn).toContain('`comet skill run` / `comet skill continue`');
-    expect(readmeEn).toContain('Skill creation guide');
-    expect(readmeZh).toContain('创建或优化可复用 Skill');
-    expect(readmeZh).toContain('`/comet-any` 是可选的 Skill 创建与组合路径');
-    expect(readmeZh).toContain('`comet eval`');
-    expect(readmeZh).toContain('`comet creator`');
-    expect(readmeZh).toContain('`comet publish`');
-    expect(readmeZh).toContain('`comet creator status` / `comet creator next`');
-    expect(readmeZh).toContain('`comet publish distribute --preview`');
-    expect(readmeZh).toContain('稳定组合 Skill');
-    expect(readmeZh).toContain('高级 Bundle 后端');
-    expect(readmeZh).toContain('高级 Engine Run');
-    expect(readmeZh).toContain('`comet skill run` / `comet skill continue`');
-    expect(readmeZh).toContain('Skill 创建文档');
   });
 
   it('keeps Skill Creator backend commands in advanced operation docs', async () => {

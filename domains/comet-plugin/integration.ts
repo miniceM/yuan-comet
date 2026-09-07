@@ -22,6 +22,7 @@ import {
 } from '../comet-memory/index.js';
 import { getCurrentVersion } from '../../platform/version/version.js';
 import { resolveProjectName } from '../../platform/paths/project-identity.js';
+import { defaultProjectKnowledgeStorageRoot } from '../../platform/paths/project-knowledge-storage.js';
 import { JsonFilePluginStorageStore, JsonFileTextStore } from '../../platform/fs/plugin-store.js';
 import { JsonPluginStateStore, PluginRuntime } from './plugin-runtime.js';
 import type { PluginScopeContext } from './types.js';
@@ -39,6 +40,7 @@ import {
   type AgentContextExpansion,
   type AgentContextManifestItem,
   type AgentContextOutcomeStatus,
+  type AgentContextOutcomeEvidence,
   type AgentExperienceEvent,
 } from '../agent-learning/index.js';
 import { readWorkflowProjectConfig } from '../workflow-contract/project-config-reader.js';
@@ -54,6 +56,8 @@ export interface CometPluginBridgeOptions {
   readonly projectRoot: string;
   readonly projectId: string;
   readonly language?: MemoryLanguage;
+  /** Optional isolated user home, primarily for hosts and tests. */
+  readonly homeDirectory?: string;
   readonly memoryRoot?: string;
   /** Optional user-level Provider selection, primarily for hosts and tests. */
   readonly memoryProviderConfig?: MemoryProviderConfig;
@@ -169,8 +173,14 @@ export class CometPluginBridge {
   public async recordContextOutcome(
     applicationId: string,
     outcome: AgentContextOutcomeStatus,
+    evidence?: AgentContextOutcomeEvidence,
   ): Promise<void> {
-    const update = await this.contextDirector.recordOutcome(applicationId, outcome, this.projectId);
+    const update = await this.contextDirector.recordOutcome(
+      applicationId,
+      outcome,
+      this.projectId,
+      evidence,
+    );
     if (update === null) throw new Error(`Unknown context application: ${applicationId}`);
     await this.flushContextApplicationOutbox();
   }
@@ -356,16 +366,19 @@ export class CometPluginBridge {
 export async function createDefaultCometPluginBridge(
   options: CometPluginBridgeOptions,
 ): Promise<CometPluginBridge> {
+  const homeDirectory = path.resolve(options.homeDirectory ?? os.homedir());
   const memoryRoot = path.resolve(
-    options.memoryRoot ?? path.join(os.homedir(), '.comet', 'memory'),
+    options.memoryRoot ?? path.join(homeDirectory, '.comet', 'memory'),
   );
-  const stateRoot = path.resolve(options.stateRoot ?? path.join(os.homedir(), '.comet', 'plugins'));
+  const stateRoot = path.resolve(
+    options.stateRoot ?? path.join(homeDirectory, '.comet', 'plugins'),
+  );
   const projectRoot = path.resolve(options.projectRoot);
   const projectName = resolveProjectName(projectRoot);
   const language = options.language ?? (await resolveProjectMemoryLanguage(projectRoot));
   const projectPolicy = await resolveProjectMemoryPolicy(projectRoot);
   const memoryProviderConfig =
-    options.memoryProviderConfig ?? (await readPersonalMemoryConfig(os.homedir()));
+    options.memoryProviderConfig ?? (await readPersonalMemoryConfig(homeDirectory));
   const storage = new JsonFilePluginStorageStore(path.join(stateRoot, 'storage'));
   const userJournal = new AgentExperienceJournal(
     new StorageAgentExperienceJournalStore(await storage.open('comet.agent-learning', 'user')),
@@ -401,8 +414,8 @@ export async function createDefaultCometPluginBridge(
         ...(options.onMemoryReviewNotice === undefined
           ? {}
           : { onReviewNotice: options.onMemoryReviewNotice }),
-        getProviderConfig: () => readPersonalMemoryConfig(os.homedir()),
-        configureProvider: (config) => writePersonalMemoryConfig(os.homedir(), config),
+        getProviderConfig: () => readPersonalMemoryConfig(homeDirectory),
+        configureProvider: (config) => writePersonalMemoryConfig(homeDirectory, config),
         listContextApplications: async (candidateId) =>
           (await applicationStore.list(candidateId)).filter(
             (application) =>
@@ -453,7 +466,9 @@ export async function createDefaultCometPluginBridge(
           ? { cacheRoot: path.resolve(options.knowledgeCacheRoot) }
           : options.stateRoot
             ? { cacheRoot: path.join(stateRoot, 'knowledge-cache') }
-            : {}),
+            : options.homeDirectory
+              ? { cacheRoot: defaultProjectKnowledgeStorageRoot(homeDirectory) }
+              : {}),
         ...(options.runProjectKnowledgeReview
           ? { semanticReviewer: options.runProjectKnowledgeReview }
           : {}),
@@ -525,10 +540,29 @@ function contextOutcomeEvent(
       ? { projectId: application.projectId ?? fallbackProjectId }
       : {}),
     source: { kind: 'system', name: 'context-director' },
-    context: {},
-    evidence: [],
+    context: {
+      task: application.task,
+      ...(application.path === undefined ? {} : { paths: [application.path] }),
+      ...(application.operation === undefined ? {} : { operation: application.operation }),
+      ...(application.phase === undefined ? {} : { phase: application.phase }),
+    },
+    evidence:
+      outcomeEvent.evidence === undefined
+        ? []
+        : [
+            { id: 'adoption', kind: 'outcome', summary: outcomeEvent.evidence.decision },
+            {
+              id: 'adoption-verification',
+              kind: 'verification',
+              summary: outcomeEvent.evidence.verification.success
+                ? 'Host reported verification passed'
+                : 'Host reported verification failed',
+              ...outcomeEvent.evidence.verification,
+            },
+          ],
     outcome: {
       status: outcomeEvent.status,
+      ...(outcomeEvent.evidence === undefined ? {} : { summary: outcomeEvent.evidence.decision }),
       ...(outcomeEvent.previousStatus === undefined
         ? {}
         : { previousStatus: outcomeEvent.previousStatus }),

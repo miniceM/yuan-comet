@@ -14,6 +14,7 @@ import {
   nativePortableChangeDir,
   nativePortableStateFile,
   readNativePortableChange,
+  recoverNativeSupervisorFinalVerificationLocked,
   returnNativePortableStateToShapeLocked,
 } from './native-portable-runtime.js';
 import {
@@ -458,6 +459,26 @@ export async function archiveNativePortableChange(options: {
             reason,
           });
           throw new Error(`${reason}; Native change returned to Shape and requires confirmation`);
+        }
+      }
+      if (
+        activeExists &&
+        !state.archived &&
+        supervisor?.finalVerification.status === 'pending' &&
+        state.verification_result === 'pass'
+      ) {
+        const supervisorRecovery = await recoverNativeSupervisorFinalVerificationLocked({
+          paths: options.paths,
+          name: options.name,
+        });
+        state = supervisorRecovery.state;
+        if (supervisorRecovery.action === 'rerun-final-verification') {
+          throw new Error(
+            'Native Supervisor final verification must be rerun for the current integration commit',
+          );
+        }
+        if (supervisorRecovery.action === 'recorded-final-verification') {
+          supervisor = await readNativeSupervisorState(options.paths, options.name);
         }
       }
       const target = archiveDirectory(options.paths, transaction?.archive_ref ?? archiveRef(state));

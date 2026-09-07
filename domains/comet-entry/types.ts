@@ -9,11 +9,7 @@ export type InitWorkflowSelection = CometWorkflow | 'both';
 export type CometEntrySkill = 'comet-native' | 'comet-classic';
 
 export type CometEntryResolutionSource =
-  | 'project-config'
-  | 'global-config'
-  | 'built-in-default'
-  | 'legacy-project'
-  | 'legacy-fallback';
+  'project-config' | 'global-config' | 'built-in-default' | 'legacy-project' | 'legacy-fallback';
 
 export interface CometEntryResolution {
   workflow: CometWorkflow;
@@ -53,12 +49,19 @@ export interface ChangeStatus {
   error?: string;
 }
 
+export interface NativeChangeStatusError {
+  name: string;
+  error: string;
+}
+
 export interface CometProjectStatus {
   schema: 'comet.status.v2';
   defaultEntry: CometEntryResolution | { error: string };
   workflows: {
     native: {
-      changes: Array<NativeStatusProjection | NativePortableStatusProjection>;
+      changes: Array<
+        NativeStatusProjection | NativePortableStatusProjection | NativeChangeStatusError
+      >;
       error?: string;
     };
     classic: { changes: ChangeStatus[]; error?: string };

@@ -2,6 +2,55 @@
 
 All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
+## What's Changed [0.4.0-rc.5] - 2026-09-07
+
+### Added
+
+- **Upstream Comet 0.4.0-rc.5 synchronization**: Integrated upstream master commits up to 0.4.0-rc.5 into the enterprise branch, reconciling core runtime updates, memory/knowledge capabilities, and unified supervisor subtask acceptance while preserving enterprise guard runtimes and SDD mappings.
+- **Host Agent knowledge review**: Agents can review queued project experience with `comet knowledge review` and submit reusable lessons without configuring another model or API key; new lessons remain trial records until successful use.
+- **Task knowledge adoption evidence**: Agents can attach the concrete decision and actual verification result to context feedback; the Dashboard shows this evidence separately from delivery, and feedback survives retries and restarts without counting repeated submissions twice.
+
+### Fixed
+
+- **Project registry recovery**: Automatically removes missing temporary projects leaked by older update tests when the upgraded CLI or Dashboard reads the registry, while preserving ordinary missing projects and inaccessible directories.
+- **Native Supervisor child status**: Dashboard child rows show localized verification, integration, archive, and re-verification states with consistent colors and no longer mistake a missing workflow phase for an uncreated child.
+- **Personal Memory lifecycle**: Independent observations retain their own candidate identities, repeated evidence no longer creates duplicate trial records, phase-specific memories remain manageable, and permanent removal clears retained observation text.
+- **Project Knowledge learning and discovery**: Tasks can discover relevant scoped references before their target file is known and expand their conclusions, applicability, sources, and verification commands. Chinese task queries preserve technical words and mixed-language identifiers. Explicit scope mismatches remain excluded. Source refresh no longer promotes untested lessons, and workflow checkpoints no longer create generic proven policies. Native learning excludes archive previews and preserves current verification evidence.
+- **Memory and knowledge Dashboard**: Failed saves preserve drafts, knowledge categories match the selected view, keyboard navigation works across knowledge tabs, and memory actions remain visible at desktop widths. Retrieval results can be scrolled and opened in readable detail previews, knowledge corrections use a wider centered editor, and personal memory uses clearer empty-state and file labels.
+- **Project Knowledge models and retrieval corpus**: Project models now describe each source module through stable, readable entry, dependency, caller, registration, and test evidence; the Dashboard lists only Markdown that actually participates in retrieval, keeps code evidence in record details, automatically compacts duplicate generated history, and restores missing or stale model records through one shared readiness flow.
+
+## What's Changed [0.4.0-rc.4] - 2026-09-04
+
+### Changed
+
+- **Dashboard theme text contrast**: Dashboard form placeholders, disabled text, workflow summary status badges, and Ant Design component states now use readable light- and dark-theme colors, with active and archived workflow states remaining visually distinct.
+- **Native Archive continuation**: Archive-ready changes now start with one complete `--dry-run`; isolated branches receive explicit finish choices and exact follow-up commands, so Agents do not guess flags or repeat status probes.
+- **Archive preflight guidance**: Dry-run now reports workspace and generated-file blockers together with the next confirmed command, preserving user-owned files and keeping dry-run and confirmed behavior aligned.
+- **Memory and Project Knowledge Dashboard**: Current records, history, tombstones, indexed sources, evidence, version chains, empty states, and real query statistics are now shown separately so users can tell what was learned, what is only searchable, and what is no longer active.
+
+### Fixed
+
+- **Native Shape confirmation**: Native now persists a separate user-confirmation step before Build, rejects early or stale `--confirmed` commands, and returns changed Shape artifacts for renewed review. Unresolved blocking questions recorded from vague requirements or supplied documents prevent confirmation preparation instead of being skipped.
+- **Dependency security updates**: Updated the transitive `fast-uri` dependency to `3.1.7` and synchronized npm and pnpm lockfiles to remove vulnerable `browserslist` and `fast-uri` resolutions, addressing the reported URL normalization, SSRF, and Browserslist stats-processing risks.
+- **Project Knowledge freshness**: Streamed content digests now validate sources of any size and detect changes even when file size and modification time are unchanged; Dashboard refreshes invalidate stale records before rebuilding models and reports project-wide totals independently of its display limit.
+- **Memory deletion and status**: Forgotten content is removed from Markdown projections during reconciliation, and forgotten or conflicted records are no longer reported as active personal memory when retained for history or audit purposes.
+- **Native legacy Supervisor recovery**: A stale, never-started v2 execution overlay no longer overrides completed `children.v1` portable history; Native detects the conflict, removes only the exact empty overlay, and accepts the portable parent handoff without manual file deletion.
+- **Native Supervisor cleanup**: Supervisor Change Archive now deletes integrated Child and integration branches against the delivered target branch, so cleanup completes from a separate change worktree without manual branch removal.
+- **Archive-owned state finalization**: Native Archive now includes the active change's state and verification artifacts in its authorized archive commit, avoiding manual commits and retry loops.
+- **Task completion handoff**: Native continuation guidance reuses the original task context instead of probing undeclared environment variables.
+
+## What's Changed [0.4.0-rc.3] - 2026-09-03
+
+### Fixed
+
+- **Devin Desktop OpenSpec compatibility**: `comet init`, `comet update`, and OpenSpec integration now use Devin Desktop's `.devin/` Skill root while keeping `windsurf` as the stable platform selector and recognizing legacy `.windsurf/` installations.
+- **Global configuration recovery**: `comet init` and a Home-directory `comet update` now recover known legacy or project-schema global configurations automatically, without asking users to edit or delete `.comet/config.yaml`.
+- **Windows atomic writes**: Comet now refreshes temporary-file and Native lock metadata after a successful close, so NTFS close-time metadata finalization no longer makes Comet treat its own files as externally changed. Identity and post-close mutation checks remain enforced before publish or release.
+- **Dashboard Project Knowledge consistency**: Dashboard now uses the same default Local Project Knowledge cache as `comet task` and `comet knowledge`, so rebuilt records and indexed Markdown sources appear in the plugin center and records created there are available to CLI retrieval. Records from the former `~/.comet/plugins/knowledge-cache` Dashboard location are imported into the canonical cache during upgrade.
+- **Native Supervisor final verification**: Supervisor Changes can now include committed parent-level fixes made after the last Child integration. Final verification records the exact forward integration commit it checked, and continuing a Change automatically repairs an interrupted record or reruns final Verify when needed, so affected users do not need to edit Runtime state or reset their branch while rewritten or divergent integration history remains blocked.
+- **Native Supervisor repair recovery**: When final parent verification fails Spec-derived acceptance after the original Children have integrated, repair Children can now carry those failed acceptance items through automatic Shape reconfirmation. Existing integrated Child history remains intact, so users who upgrade Comet can continue the workflow without editing Runtime state or repeating completed Child work.
+- **Native Verifier retry**: When independent verification is unavailable, Native now offers an immediate retry alongside the explicit degraded-result choice, preserving the current candidate, completed checks, and repair scope so users can continue without restoring files, starting a separate service, or configuring a callback.
+
 ## What's Changed [0.4.0-rc.2] - 2026-09-02
 
 ### Added
@@ -26,6 +75,61 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 - **macOS worktree and uninstall paths**: Hook worktree routing and uninstall reports now reconcile macOS logical and physical temporary paths, so linked worktree selection remains correct and preserved-content messages use the path supplied by the user.
 - **Read-only trust anchors**: Filesystem read-only mount responses now count as non-writable during trusted-file verification instead of aborting the capability check.
+- **Personal Memory lifecycle**: Independent observations retain their own candidate identities, repeated evidence no longer creates duplicate trial records, phase-specific memories remain manageable, and permanent removal clears retained observation text.
+- **Project Knowledge learning and discovery**: Tasks can discover relevant scoped references before their target file is known and expand their conclusions, applicability, sources, and verification commands. Chinese task queries preserve technical words and mixed-language identifiers. Explicit scope mismatches remain excluded. Source refresh no longer promotes untested lessons, and workflow checkpoints no longer create generic proven policies. Native learning excludes archive previews and preserves current verification evidence.
+- **Memory and knowledge Dashboard**: Failed saves preserve drafts, knowledge categories match the selected view, keyboard navigation works across knowledge tabs, and memory actions remain visible at desktop widths. Retrieval results can be scrolled and opened in readable detail previews, knowledge corrections use a wider centered editor, and personal memory uses clearer empty-state and file labels.
+
+- **Project Knowledge models and retrieval corpus**: Project models now describe each source module through stable, readable entry, dependency, caller, registration, and test evidence; the Dashboard lists only Markdown that actually participates in retrieval, keeps code evidence in record details, automatically compacts duplicate generated history, and restores missing or stale model records through one shared readiness flow.
+
+## What's Changed [0.4.0-rc.4] - 2026-09-04
+
+### Changed
+
+- **Dashboard theme text contrast**: Dashboard form placeholders, disabled text, workflow summary status badges, and Ant Design component states now use readable light- and dark-theme colors, with active and archived workflow states remaining visually distinct.
+- **Native Archive continuation**: Archive-ready changes now start with one complete `--dry-run`; isolated branches receive explicit finish choices and exact follow-up commands, so Agents do not guess flags or repeat status probes.
+- **Archive preflight guidance**: Dry-run now reports workspace and generated-file blockers together with the next confirmed command, preserving user-owned files and keeping dry-run and confirmed behavior aligned.
+- **Memory and Project Knowledge Dashboard**: Current records, history, tombstones, indexed sources, evidence, version chains, empty states, and real query statistics are now shown separately so users can tell what was learned, what is only searchable, and what is no longer active.
+
+### Fixed
+
+- **Native Shape confirmation**: Native now persists a separate user-confirmation step before Build, rejects early or stale `--confirmed` commands, and returns changed Shape artifacts for renewed review. Unresolved blocking questions recorded from vague requirements or supplied documents prevent confirmation preparation instead of being skipped.
+- **Dependency security updates**: Updated the transitive `fast-uri` dependency to `3.1.7` and synchronized npm and pnpm lockfiles to remove vulnerable `browserslist` and `fast-uri` resolutions, addressing the reported URL normalization, SSRF, and Browserslist stats-processing risks.
+- **Project Knowledge freshness**: Streamed content digests now validate sources of any size and detect changes even when file size and modification time are unchanged; Dashboard refreshes invalidate stale records before rebuilding models and reports project-wide totals independently of its display limit.
+- **Memory deletion and status**: Forgotten content is removed from Markdown projections during reconciliation, and forgotten or conflicted records are no longer reported as active personal memory when retained for history or audit purposes.
+- **Native legacy Supervisor recovery**: A stale, never-started v2 execution overlay no longer overrides completed `children.v1` portable history; Native detects the conflict, removes only the exact empty overlay, and accepts the portable parent handoff without manual file deletion.
+- **Native Supervisor cleanup**: Supervisor Change Archive now deletes integrated Child and integration branches against the delivered target branch, so cleanup completes from a separate change worktree without manual branch removal.
+- **Archive-owned state finalization**: Native Archive now includes the active change's state and verification artifacts in its authorized archive commit, avoiding manual commits and retry loops.
+- **Task completion handoff**: Native continuation guidance reuses the original task context instead of probing undeclared environment variables.
+
+## What's Changed [0.4.0-rc.3] - 2026-09-03
+
+### Fixed
+
+- **Devin Desktop OpenSpec compatibility**: `comet init`, `comet update`, and OpenSpec integration now use Devin Desktop's `.devin/` Skill root while keeping `windsurf` as the stable platform selector and recognizing legacy `.windsurf/` installations.
+- **Global configuration recovery**: `comet init` and a Home-directory `comet update` now recover known legacy or project-schema global configurations automatically, without asking users to edit or delete `.comet/config.yaml`.
+- **Windows atomic writes**: Comet now refreshes temporary-file and Native lock metadata after a successful close, so NTFS close-time metadata finalization no longer makes Comet treat its own files as externally changed. Identity and post-close mutation checks remain enforced before publish or release.
+- **Dashboard Project Knowledge consistency**: Dashboard now uses the same default Local Project Knowledge cache as `comet task` and `comet knowledge`, so rebuilt records and indexed Markdown sources appear in the plugin center and records created there are available to CLI retrieval. Records from the former `~/.comet/plugins/knowledge-cache` Dashboard location are imported into the canonical cache during upgrade.
+- **Native Supervisor final verification**: Supervisor Changes can now include committed parent-level fixes made after the last Child integration. Final verification records the exact forward integration commit it checked, and continuing a Change automatically repairs an interrupted record or reruns final Verify when needed, so affected users do not need to edit Runtime state or reset their branch while rewritten or divergent integration history remains blocked.
+- **Native Supervisor repair recovery**: When final parent verification fails Spec-derived acceptance after the original Children have integrated, repair Children can now carry those failed acceptance items through automatic Shape reconfirmation. Existing integrated Child history remains intact, so users who upgrade Comet can continue the workflow without editing Runtime state or repeating completed Child work.
+- **Native Verifier retry**: When independent verification is unavailable, Native now offers an immediate retry alongside the explicit degraded-result choice, preserving the current candidate, completed checks, and repair scope so users can continue without restoring files, starting a separate service, or configuring a callback.
+
+## What's Changed [0.4.0-rc.2] - 2026-09-01
+
+### Added
+
+- **CLI output envelope**: Native and Classic CLI `--json` output now carries `summary`, `next`, and `user_message` fields alongside the unchanged machine data. `summary` states what happened in plain user language, `next` names the single follow-up action for the Agent, and `user_message` provides ready-to-relay bilingual text for user decisions, so Agents quote the Runtime's wording instead of paraphrasing internal fields.
+
+### Changed
+
+- **Human-first default CLI text**: Native commands no longer print the raw internal state JSON by default. Text output now leads with a plain-language summary line, a `NEXT:` step, and a `RELAY TO USER:` block for pauses that need a user decision; the full machine projection moved behind the new global `--verbose` flag, and stable error codes (conflicts, snapshot budget, workspace isolation) render as human sentences with the machine detail retained on a `DETAIL:` line. Classic commands (`state next/scale/recover/transition/entry-check`, handoff, archive, manual `guard` checks, and phase-guard write blocks) prepend bilingual summaries that follow the change's language while keeping their existing machine lines — blocked guard checks now say the failing items are the Agent's checklist, not user actions. `comet status` adds one plain-language line per Native and Classic change above its machine details.
+- **CLI envelope consistency**: Direct Classic command `--json` invocations and verbose Native errors now retain the structured envelope and machine detail, while user-decision relays take precedence over internal confirmation commands so an Agent asks the user before resuming a paused workflow.
+
+### Fixed
+
+- **Native verification loop-stop handoff**: When Native verification paused after repeated failures or repeated no-progress results, the Agent received no user-facing message at the pause point, so sessions could keep re-checking the same candidate instead of asking the user whether to continue repairing or adjust the requirements. The Runtime now returns an explicit user decision request with ready-to-relay bilingual messages for the loop stop, and the same applies when a Verifier blocker waits on information only the user can provide.
+- **Native status resilience for stale children indexes**: A stale `children.yaml` acceptance index (for example a partially synced Supervisor copy inside another Git worktree) no longer blocks the whole Native status view. `comet status` and `comet native status` now keep listing every other change, show the drifted copy as needing Shape re-confirmation, and the Dashboard keeps rendering parent-child progress, while strict index validation still guards state-advancing commands such as Shape confirmation and Build.
+
+- **Prerelease update detection**: `comet init` and `comet update` now compare complete SemVer values, so beta-to-RC, RC-to-stable, future patch, and future minor prerelease upgrades are detected correctly.
 
 ## What's Changed [0.4.0-rc.1] - 2026-08-31
 

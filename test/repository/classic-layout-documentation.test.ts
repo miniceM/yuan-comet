@@ -2,8 +2,6 @@ import { promises as fs } from 'fs';
 import { describe, expect, it } from 'vitest';
 
 const documentation = [
-  'README.md',
-  'README-zh.md',
   'docs/operations/AUTO-TRANSITION.md',
   'docs/operations/CONTEXT-COMPRESSION.md',
 ] as const;

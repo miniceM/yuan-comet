@@ -17,10 +17,11 @@ type NativePortableContinuationInputOption = {
 type NativePortableCommandAlternative = {
   name: string;
   stateVersion: number;
-  expectedAction: NativePortableExpectedContinuationAction;
-  commandArgs: string[];
+  expectedAction: NativePortableExpectedContinuationAction | 'archive-preview';
+  commandArgs: string[] | null;
   requiredInputs: string[];
   inputOptions: NativePortableContinuationInputOption[];
+  description?: string;
 };
 
 export interface NativePortableRunnerAction {
@@ -45,7 +46,9 @@ export interface NativePortableContinuation {
   status: NativePortableState['status'];
   stateVersion: number;
   disposition: 'continue' | 'await-user' | 'blocked' | 'done';
+  requiresUserDecision: boolean;
   action:
+    | 'prepare-shape-confirmation'
     | 'confirm-shape'
     | 'confirm-skill-coordinated-pass'
     | 'confirm-verifier-unavailable'
@@ -68,6 +71,13 @@ export interface NativePortableContinuation {
   userCommunication: NativePortableUserCommunication;
 }
 
+export type NativePortableArchiveContinuationMode = 'archive-ready' | 'preview' | 'blocked';
+
+export interface NativePortableContinuationOptions {
+  archiveMode?: NativePortableArchiveContinuationMode;
+  archiveBlockers?: readonly string[];
+}
+
 function localized(state: NativePortableState, english: string, chinese: string): string {
   return state.language === 'zh-CN' ? chinese : english;
 }
@@ -83,6 +93,30 @@ function nativePortableUserCommunication(
     agentInstruction,
   });
 
+  if (
+    state.phase === 'shape' &&
+    state.status === 'await-user' &&
+    state.loop.next_action === 'confirm-shape'
+  ) {
+    return state.language === 'zh-CN'
+      ? {
+          required: true,
+          message:
+            'Shape 已整理完成。请确认目标、范围、关键决定、验收标准和非目标是否准确；明确确认后才会进入 Build。',
+          suggestedReply: '确认进入 Build',
+          agentInstruction:
+            '先用自然语言简要展示目标、范围、关键决定、验收标准和非目标，再转述 message 并等待用户明确确认。只有用户明确同意当前完整 Shape 时，才执行 commandAlternatives 中的 confirm-shape；补充或修改要求不算确认。不要展示机器状态或提前运行 --confirmed。',
+        }
+      : {
+          required: true,
+          message:
+            'Shape is ready. Confirm that the target, scope, key decisions, acceptance criteria, and non-goals are accurate; Build starts only after explicit confirmation.',
+          suggestedReply: 'Confirm and enter Build',
+          agentInstruction:
+            'First present a concise natural-language summary of the target, scope, key decisions, acceptance criteria, and non-goals. Then relay message and wait for explicit user confirmation. Run confirm-shape from commandAlternatives only when the user explicitly accepts the complete current Shape; additions or corrections are not confirmation. Do not expose machine state or run --confirmed early.',
+        };
+  }
+
   if (coordinationChoiceRequired && state.phase === 'shape' && state.status === 'active') {
     return {
       required: true,
@@ -94,8 +128,8 @@ function nativePortableUserCommunication(
       suggestedReply: localized(state, 'Reply A or B', '回复 A 或 B'),
       agentInstruction: localized(
         state,
-        'Relay the two coordination choices and wait for the user decision. Do not treat a generic confirmation as a mode selection or run --confirmed without --coordination-mode.',
-        '转述这两个推进方式并等待用户选择。不要把普通“确认”视为已选择推进方式，也不要在没有 --coordination-mode 时运行 --confirmed。',
+        'Relay the two coordination choices and wait for the user decision. After the user chooses, execute the prepare-shape-confirmation commandArgs with the selected --coordination-mode. Do not combine mode selection with final confirmation; confirmation of the complete Shape is a separate await-user step.',
+        '转述这两个推进方式并等待用户选择。用户选择后，使用对应的 --coordination-mode 执行 prepare-shape-confirmation 的完整 commandArgs；不要把推进方式选择和最终确认合并执行，完整 Shape 的确认是后续单独的 await-user 步骤。',
       ),
     };
   }
@@ -103,7 +137,8 @@ function nativePortableUserCommunication(
   if (
     state.phase === 'verify' &&
     state.status === 'active' &&
-    state.loop.stage === 'verify-ready'
+    state.loop.stage === 'verify-ready' &&
+    state.loop.next_action !== 'await-verifier-result'
   ) {
     return noUserUpdate(
       localized(
@@ -122,8 +157,8 @@ function nativePortableUserCommunication(
     return noUserUpdate(
       localized(
         state,
-        'Wait only while the dispatched Verifier task is still active. If it did not start, ended without a response, or is no longer available, immediately submit the matching verifier-unavailable or verifier-execution-error input. Do not ask the user to recover files or processes, and do not expose attempt or requestCheckRounds.',
-        '仅在已派发的独立验收任务仍在运行时等待。如果任务未启动、结束后没有返回结果或已经丢失，立即提交匹配的 verifier-unavailable 或 verifier-execution-error 输入。不要让用户恢复文件或进程，也不要向用户展示 attempt、requestCheckRounds 等机器状态。',
+        'Wait only while the dispatched Verifier task is still active. If the task did not start, failed, timed out, ended without a response, or was lost, immediately submit verifier-execution-error. Submit verifier-unavailable only when the current platform truly has no usable subagent capability. Do not ask the user to recover files or processes, and do not expose attempt or requestCheckRounds.',
+        '仅在已派发的独立验收任务仍在运行时等待。如果任务未启动、执行失败、超时、结束后没有返回结果或已经丢失，立即提交 verifier-execution-error；只有当前平台确实没有可用的 subagent 能力时才提交 verifier-unavailable。不要让用户恢复文件或进程，也不要向用户展示 attempt、requestCheckRounds 等机器状态。',
       ),
     );
   }
@@ -160,18 +195,75 @@ function nativePortableUserCommunication(
       ? {
           required: true,
           message:
-            '由于独立验收服务暂时不可用，目前只能完成自动检查。你可以选择接受当前检查结果，或者等验收服务恢复后再重试。',
-          suggestedReply: null,
+            '独立验收当前不可用，但你的代码和已经完成的检查都已安全保留。你可以直接重新尝试独立验收，也可以明确接受只有自动检查的结果。',
+          suggestedReply: '重新尝试独立验收',
           agentInstruction:
-            '向用户转述 message，并请用户明确选择是否接受只有自动检查的结果。不要把“继续”当作默认接受。',
+            '只向用户转述 message 和 suggestedReply，并等待用户选择。用户要求重试时执行 commandAlternatives 中的 retry-verifier；只有用户明确接受降级结果时才执行 confirm-verifier-unavailable。不要把“继续”视为接受降级结果，也不要要求用户处理文件、进程、服务或回调。',
         }
       : {
           required: true,
           message:
-            'Because independent verification is temporarily unavailable, only the automatic checks could be completed. You can accept the current check results or wait and retry when verification is available.',
+            'Independent verification is currently unavailable, but your code and completed checks are safely preserved. You can retry independent verification directly or explicitly accept the automatic-check-only result.',
+          suggestedReply: 'Retry independent verification',
+          agentInstruction:
+            'Relay only message and suggestedReply, then wait for the user choice. If the user asks to retry, run retry-verifier from commandAlternatives; run confirm-verifier-unavailable only when the user explicitly accepts the degraded result. Do not treat “Continue” as accepting the degraded result, and do not ask the user to manage files, processes, services, or callbacks.',
+        };
+  }
+
+  if (
+    state.phase === 'verify' &&
+    state.status === 'await-user' &&
+    state.loop.next_action === 'resolve-verifier-blocker'
+  ) {
+    return state.language === 'zh-CN'
+      ? {
+          required: true,
+          message:
+            '验证暂时无法下结论，因为缺少只有你能提供的信息，例如外部系统的真实行为或某个业务决定。你的代码和已经完成的检查都已安全保留。补充所需信息后可继续验证，也可以选择修改实现或调整需求。',
           suggestedReply: null,
           agentInstruction:
-            'Relay message and ask the user to explicitly choose whether to accept automatic checks only. Do not treat “Continue” as implicit acceptance.',
+            '向用户转述 message，请用户补充缺失的信息，或在继续验证（resolve-verifier-blocker）、修改实现、调整需求之间明确选择，再执行 commandAlternatives 中对应的完整命令。不要把“继续”当作默认选择，也不要展示内部轮次、计数、路径或恢复步骤。',
+        }
+      : {
+          required: true,
+          message:
+            'Verification cannot reach a verdict yet because information only you can provide is missing, such as the real behavior of an external system or a business decision. Your code and completed checks are safely preserved. Supply the missing information to resume verification, or choose to revise the implementation or the requirements.',
+          suggestedReply: null,
+          agentInstruction:
+            'Relay message and ask the user to supply the missing information or explicitly choose between resuming verification (resolve-verifier-blocker), revising the implementation, and revising the requirements; run the matching commandAlternative afterwards. Do not treat “Continue” as a default choice, and do not expose internal rounds, counters, paths, or recovery steps.',
+        };
+  }
+
+  if (
+    state.phase === 'verify' &&
+    state.status === 'await-user' &&
+    state.loop.next_action === 'await-user'
+  ) {
+    // New states persist the exact stop reason. Older v4 states did not have
+    // that field, so retain the counter-based fallback for compatibility.
+    const stopReason =
+      state.loop.stop_reason ?? (state.loop.no_progress_count >= 3 ? 'stalled' : 'budget');
+    const stalled = stopReason === 'stalled';
+    const zhMessage = stalled
+      ? '验证已连续三轮失败且未通过的验收场景一直没有减少，本次修改已暂停，以避免在同一个问题上反复循环。你的代码和已经完成的检查都已安全保留。可以让 Builder 换一种修复思路继续，也可以回到需求阶段调整验收项。'
+      : '本次修改的验证失败次数已用完配置的预算，因此暂停等待你的决定，而不是自动重试。你的代码和已经完成的检查都已安全保留。可以让 Builder 换一种修复思路继续，也可以回到需求阶段调整验收项。';
+    const enMessage = stalled
+      ? 'Verification has failed three times in a row without the unresolved scenarios shrinking, so this change is paused to avoid looping on the same problem. Your code and completed checks are safely preserved. You can have the Builder try a different repair approach, or go back and adjust the requirements.'
+      : 'Verification for this change has used its configured failure budget, so it is paused for your decision instead of retrying automatically. Your code and completed checks are safely preserved. You can have the Builder continue with a different repair approach, or go back and adjust the requirements.';
+    return state.language === 'zh-CN'
+      ? {
+          required: true,
+          message: zhMessage,
+          suggestedReply: '继续修复',
+          agentInstruction:
+            '向用户转述 message 和 suggestedReply，等待用户在“继续修复实现”（revise-implementation）与“调整需求”（revise-requirements）之间明确选择，再执行 commandAlternatives 中对应的完整命令。选择继续修复时，要求 Builder 更换修复思路。不要替用户选择，也不要展示内部轮次、计数、路径或恢复步骤。',
+        }
+      : {
+          required: true,
+          message: enMessage,
+          suggestedReply: 'Continue repairing',
+          agentInstruction:
+            'Relay message and suggestedReply, then wait for the user to explicitly choose between continuing the implementation (revise-implementation) and adjusting the requirements (revise-requirements); run the matching commandAlternative afterwards. When continuing, ask the Builder to change its repair approach. Do not choose for the user, and do not expose internal rounds, counters, paths, or recovery steps.',
         };
   }
 
@@ -182,6 +274,98 @@ function nativePortableUserCommunication(
       '按 continuation 执行下一步。除非 required 为 true，否则继续推进，不要让用户处理内部工作流状态，也不要把机器字段作为面向用户的说明。',
     ),
   );
+}
+
+function nativePortableArchiveFinishCommunication(
+  state: NativePortableState,
+): NativePortableUserCommunication {
+  const branch = state.workspace.change_branch ?? '<change-branch>';
+  const target = state.workspace.target_branch ?? '<target-branch>';
+  return state.language === 'zh-CN'
+    ? {
+        required: true,
+        message: `当前 change 位于 ${branch}，目标分支为 ${target}。请选择一次工作区收尾方式：A) 保留工作区；B) 本地合并；C) 推送分支；D) 推送并创建 PR；E) 暂不归档。选择 A-D 后 Runtime 会先执行完整 dry-run，再给出唯一的 confirmed 命令；选择 E 将保留当前 change 等待稍后继续。`,
+        suggestedReply: '回复 A、B、C、D 或 E',
+        agentInstruction:
+          '只向用户展示五种收尾方式及实际影响，等待用户选择。选择 A-D 时执行对应 commandAlternatives 中包含 --dry-run --finish 的完整命令；选择 E 时停止，不运行任何 Archive 命令。不要直接运行 --confirmed，也不要自行猜测 finish。',
+      }
+    : {
+        required: true,
+        message: `This change is on ${branch} and targets ${target}. Choose one workspace finish: A) keep the workspace; B) merge locally; C) push the branch; D) push and create a PR; or E) defer Archive. For A-D, Runtime will run a complete dry-run first, then return one confirmed command; E keeps the current change for later.`,
+        suggestedReply: 'Reply A, B, C, D, or E',
+        agentInstruction:
+          'Show all five finish choices and their actual effects, then wait. For A-D, execute the matching complete commandAlternative containing --dry-run --finish; for E, stop without running an Archive command. Do not run --confirmed directly or guess a finish mode.',
+      };
+}
+
+function nativePortableArchiveFinishAlternatives(
+  state: NativePortableState,
+): NativePortableCommandAlternative[] {
+  const choices: Array<{
+    finish: 'keep' | 'merge' | 'push' | 'pull-request';
+    name: string;
+    description: [string, string];
+  }> = [
+    {
+      finish: 'keep',
+      name: 'keep-workspace',
+      description: [
+        '保留当前分支和目录；完成归档提交，不合并、不推送、不创建 PR。',
+        'Keep the current branch and directory; create the archive commit without merging, pushing, or creating a PR.',
+      ],
+    },
+    {
+      finish: 'merge',
+      name: 'merge-locally',
+      description: [
+        '完成归档提交，并把 change 分支本地合并到目标分支；不推送、不创建 PR。',
+        'Create the archive commit and merge the change branch locally into the target branch without pushing or creating a PR.',
+      ],
+    },
+    {
+      finish: 'push',
+      name: 'push-branch',
+      description: [
+        '完成归档提交并推送 change 分支；不合并到目标分支、不创建 PR。',
+        'Create the archive commit and push the change branch without merging into the target branch or creating a PR.',
+      ],
+    },
+    {
+      finish: 'pull-request',
+      name: 'push-pull-request',
+      description: [
+        '完成归档提交、推送 change 分支，并以目标分支为基础创建 PR。',
+        'Create the archive commit, push the change branch, and create a PR against the target branch.',
+      ],
+    },
+  ];
+  const finishAlternatives: NativePortableCommandAlternative[] = choices.map(
+    ({ finish, name, description }) => ({
+      name,
+      stateVersion: state.state_version,
+      expectedAction: 'archive-preview' as const,
+      commandArgs: ['comet', 'native', 'archive', state.name, '--dry-run', '--finish', finish],
+      requiredInputs: [],
+      inputOptions: [],
+      description: localized(state, description[1], description[0]),
+    }),
+  );
+  return [
+    ...finishAlternatives,
+    {
+      name: 'defer-archive',
+      stateVersion: state.state_version,
+      expectedAction: 'archive-preview' as const,
+      commandArgs: null,
+      requiredInputs: [],
+      inputOptions: [],
+      description: localized(
+        state,
+        'Keep the current change and workspace without archiving; stop and resume later.',
+        '保留当前 change 和工作区，不执行归档；停止本次流程，稍后再继续。',
+      ),
+    },
+  ];
 }
 
 function boundNativeNextCommandArgs(options: {
@@ -228,7 +412,7 @@ function supervisorCoordinationRequired(children?: NativeChildrenInspection | nu
   );
 }
 
-function boundNativeShapeCommandArgs(options: {
+function boundNativeShapePreparationCommandArgs(options: {
   change: string;
   stateVersion: number;
   coordinationRequired: boolean;
@@ -241,11 +425,10 @@ function boundNativeShapeCommandArgs(options: {
     '--summary',
     '<summary>',
     ...(options.coordinationRequired ? ['--coordination-mode', '<coordination-mode>'] : []),
-    '--confirmed',
     '--expected-state-version',
     String(options.stateVersion),
     '--expected-action',
-    'confirm-shape',
+    'prepare-shape-confirmation',
   ];
 }
 
@@ -302,9 +485,11 @@ function nativeNextRevisionAlternatives(options: {
 export function nativePortableContinuation(
   state: NativePortableState,
   children?: NativeChildrenInspection | null,
+  options: NativePortableContinuationOptions = {},
 ): NativePortableContinuation {
   const coordinationRequired =
     supervisorCoordinationRequired(children) && state.coordination_mode === undefined;
+  const userCommunication = nativePortableUserCommunication(state, coordinationRequired);
   const base = {
     schema: 'comet.native.continuation.v2' as const,
     skill: 'comet-native' as const,
@@ -313,7 +498,8 @@ export function nativePortableContinuation(
     status: state.status,
     stateVersion: state.state_version,
     inputOptions: [] as NativePortableContinuation['inputOptions'],
-    userCommunication: nativePortableUserCommunication(state, coordinationRequired),
+    requiresUserDecision: userCommunication.required,
+    userCommunication,
   };
   const runner = (kind: NativePortableRunnerAction['kind']): NativePortableRunnerAction => ({
     kind,
@@ -332,6 +518,27 @@ export function nativePortableContinuation(
     };
   }
   if (state.status === 'await-user') {
+    if (state.phase === 'shape' && state.loop.next_action === 'confirm-shape') {
+      return {
+        ...base,
+        disposition: 'await-user',
+        action: 'confirm-shape',
+        commandArgs: null,
+        requiredInputs: ['summary', 'shared-understanding-confirmation'],
+        inputOptions: [textInput('summary', '--summary')],
+        commandAlternatives: [
+          nativeNextDecisionAlternative({
+            name: 'confirm-shape',
+            change: state.name,
+            stateVersion: state.state_version,
+            expectedAction: 'confirm-shape',
+            flag: '--confirmed',
+            confirmationInput: 'shared-understanding-confirmation',
+          }),
+        ],
+        runnerAction: runner('none'),
+      };
+    }
     if (
       state.phase === 'verify' &&
       state.verification_result === 'pass' &&
@@ -370,28 +577,26 @@ export function nativePortableContinuation(
         ...base,
         disposition: 'await-user',
         action: 'confirm-verifier-unavailable',
-        commandArgs: boundNativeNextCommandArgs({
-          change: state.name,
-          stateVersion: state.state_version,
-          action: 'confirm-verifier-unavailable',
-          flag: '--confirmed',
-        }),
-        requiredInputs: ['summary', 'user-confirmation'],
-        inputOptions: [
-          {
-            name: 'summary',
-            flag: '--summary',
-            valueKind: 'text',
-            required: true,
-            template: null,
-          },
-          {
-            name: 'confirmed',
+        commandArgs: null,
+        requiredInputs: ['summary', 'user-decision'],
+        inputOptions: [textInput('summary', '--summary')],
+        commandAlternatives: [
+          nativeNextDecisionAlternative({
+            name: 'retry-verifier',
+            change: state.name,
+            stateVersion: state.state_version,
+            expectedAction: 'retry-verifier',
+            flag: '--retry-verifier',
+            confirmationInput: 'user-decision',
+          }),
+          nativeNextDecisionAlternative({
+            name: 'confirm-verifier-unavailable',
+            change: state.name,
+            stateVersion: state.state_version,
+            expectedAction: 'confirm-verifier-unavailable',
             flag: '--confirmed',
-            valueKind: 'confirmation',
-            required: true,
-            template: null,
-          },
+            confirmationInput: 'user-decision',
+          }),
         ],
         runnerAction: runner('none'),
       };
@@ -480,17 +685,13 @@ export function nativePortableContinuation(
     return {
       ...base,
       disposition: coordinationRequired ? 'await-user' : 'continue',
-      action: 'confirm-shape',
-      commandArgs: boundNativeShapeCommandArgs({
+      action: 'prepare-shape-confirmation',
+      commandArgs: boundNativeShapePreparationCommandArgs({
         change: state.name,
         stateVersion: state.state_version,
         coordinationRequired,
       }),
-      requiredInputs: [
-        'summary',
-        ...(coordinationRequired ? ['coordination-choice'] : []),
-        'shared-understanding-confirmation',
-      ],
+      requiredInputs: ['summary', ...(coordinationRequired ? ['coordination-choice'] : [])],
       inputOptions: [
         {
           name: 'summary',
@@ -508,7 +709,6 @@ export function nativePortableContinuation(
               ),
             ]
           : []),
-        confirmationInput('confirmed', '--confirmed'),
       ],
       runnerAction: runner('none'),
     };
@@ -738,11 +938,61 @@ export function nativePortableContinuation(
     state.loop.stage === 'archive-ready' &&
     !state.archived
   ) {
+    const archiveMode = options.archiveMode ?? 'archive-ready';
+    const isolated = state.workspace.isolation !== 'current';
+    const finishRequired = isolated && state.workspace.finish === null;
+    if (archiveMode === 'blocked') {
+      return {
+        ...base,
+        disposition: 'blocked',
+        action: 'archive',
+        commandArgs: null,
+        requiredInputs: ['archive-blocker-resolution'],
+        inputOptions: [],
+        runnerAction: runner('none'),
+      };
+    }
+    if (archiveMode === 'preview') {
+      if (options.archiveBlockers && options.archiveBlockers.length > 0) {
+        return {
+          ...base,
+          disposition: 'blocked',
+          action: 'archive',
+          commandArgs: null,
+          requiredInputs: ['archive-blocker-resolution'],
+          inputOptions: [],
+          runnerAction: runner('none'),
+        };
+      }
+      return {
+        ...base,
+        disposition: 'continue',
+        action: 'archive',
+        commandArgs: ['comet', 'native', 'archive', state.name, '--confirmed'],
+        requiredInputs: [],
+        runnerAction: runner('none'),
+      };
+    }
+    if (finishRequired) {
+      return {
+        ...base,
+        disposition: 'await-user',
+        action: 'archive',
+        commandArgs: null,
+        requiredInputs: ['workspace-finish'],
+        inputOptions: [
+          choiceInput('finish', '--finish', ['keep', 'merge', 'push', 'pull-request']),
+        ],
+        commandAlternatives: [...nativePortableArchiveFinishAlternatives(state)],
+        userCommunication: nativePortableArchiveFinishCommunication(state),
+        runnerAction: runner('none'),
+      };
+    }
     return {
       ...base,
       disposition: 'continue',
       action: 'archive',
-      commandArgs: ['comet', 'native', 'archive', state.name, '--confirmed'],
+      commandArgs: ['comet', 'native', 'archive', state.name, '--dry-run'],
       requiredInputs: [],
       commandAlternatives: [
         nativeNextDecisionAlternative({
