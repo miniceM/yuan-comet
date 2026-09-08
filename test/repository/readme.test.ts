@@ -71,13 +71,15 @@ describe('README assets', () => {
     expect(contributingZh).toContain(`Node.js \`${developmentRange}\``);
   });
 
-  it('highlights the current release candidate and links the website changelog', async () => {
+  it('highlights the stable release without retaining prerelease announcements', async () => {
     const readmeEn = await fs.readFile('README.md', 'utf-8');
     const readmeZh = await fs.readFile('README-zh.md', 'utf-8');
 
+    expect(readmeEn).toContain('**Comet 0.4.0 stable release**');
+    expect(readmeZh).toContain('**Comet 0.4.0 正式版**');
     for (const version of ['0.4.0-rc.1', '0.4.0-beta.7', '0.4.0-beta.1', '0.3.9']) {
-      expect(readmeEn).toContain(`**${version}**`);
-      expect(readmeZh).toContain(`**${version}**`);
+      expect(readmeEn).not.toContain(`**${version}**`);
+      expect(readmeZh).not.toContain(`**${version}**`);
     }
     expect(readmeEn).toContain('https://docs.comet.rpamis.com/en/changelog');
     expect(readmeZh).toContain('https://docs.comet.rpamis.com/zh/changelog');

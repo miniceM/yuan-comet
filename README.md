@@ -45,17 +45,16 @@ It provides two independent requirements workflows: Native for strong models, po
 It allows you to use a toolchain to handle everything from requirements to archiving, combine any skill to make it like Comet, evolving your skills based on scientific **Rubric**, **Pass@k**, and **Pass^k** scoring.
 
 > [!IMPORTANT]
-> **0.4.0-rc.1** — Native Supervisor Changes can decompose a complex requirement into **dependency-aware child changes**, let independent Codex sessions or a Claude Code Agent Team implement and verify them in **isolated worktrees**, and then have the Runtime **integrate them in dependency order** before the parent change's **final acceptance**.
+> **Comet 0.4.0 stable release** — Building on 0.3.9, this release adds Native workflows, multi-agent collaboration, memory and knowledge management, and a complete toolchain for creating, distributing, and evaluating Skills.
 >
-> RC.1 also adds manageable **Personal Memory**, **Project Knowledge**, and **progressive context**, plus a **three-pane Dashboard** for workflows, Git worktrees, memory, knowledge, and plugin settings. Native **Portable State**, **recovery paths**, and the **Windows Hook** experience are hardened throughout.
+> - **Native workflows for strong models**: After requirements are confirmed, the Agent chooses how to plan, implement, test, and review. Comet handles state checks, acceptance, and resumable archive. Native runs independently of Classic, which retains the OpenSpec + Superpowers five-phase methodology; both share configuration, status, Dashboard, and Eval entry points.
+> - **Parallel delivery for complex requirements**: Supervisor Changes split a goal into dependency-aware child changes. Independent Codex sessions or Claude Code Agent Teams implement and verify them in isolated worktrees, then integrate them in dependency order before the parent change's final acceptance.
+> - **Manageable Personal Memory and Project Knowledge**: Retain collaboration preferences and reusable experience across tasks, and progressively supply context relevant to the current task. You can inspect, correct, forget, or pause it; new lessons start in trial and gain supporting evidence through actual adoption and verification.
+> - **Skill creation, distribution, and evaluation**: Compose any Skills with `/comet-any` and package them for distribution. Use `comet eval` with Rubric, Pass@k, Pass^k, and LangSmith to compare results and guide Skill improvements.
+> - **A unified three-pane Dashboard**: Inspect Native and Classic progress, Git worktrees, acceptance results, and archives in your browser, and manage Personal Memory, Project Knowledge, and plugin settings.
+> - **Cross-platform execution and recovery**: A pure Node.js Runtime supports Windows, macOS, and Linux without Bash or WSL. Task state stays in the project so work can resume after interruptions or session changes; CLI output identifies the next step and decisions that need your input.
 >
-> **0.4.0-beta.7** — Added a **native, recoverable workflow for strong models**. Native and Classic operate independently through shared configuration, status, Guard, Dashboard, and Eval entry points. Aligned evaluation (16 tasks × 48 runs, using the 41 paired samples where both treatments passed) showed **76.8% fewer total tokens**, **57.4% fewer Agent rounds**, **47.4% less time**, **87.5% pass^3 (+12.5pp), and 100% pass@3**.
->
-> **0.4.0-beta.1** — Upgraded Comet to a pure Node runtime without Bash/WSL and added three core capabilities: compose **any** Skill through `/comet-any`, evaluate **any** Skill through `comet eval` with LangSmith integration, and inspect every change through `comet dashboard`.
->
-> **0.3.9** — Review mode (`off|standard|thorough`) controls Build/Verify code review with project defaults; init/update gained optional dependency prompts, broader CLI i18n, stronger phase guards, and macOS executable bits.
->
-> See the website [Changelog](https://docs.comet.rpamis.com/en/changelog) for details and the [Native vs. 0.4.0 Classic baseline](https://docs.comet.rpamis.com/en/eval/comet-native-vs-040-experiment) for the evaluation results.
+> In the existing aligned Native vs. 0.4.0 Classic experiment (16 tasks, 48 runs per treatment), the 41 paired samples where both passed showed **76.8% fewer total tokens**, **57.4% fewer Agent rounds**, and **47.4% less time** for Native. Across the full sample, Native achieved **87.5% pass^3 (+12.5 percentage points)**, while both treatments reached **100% pass@3**. See the [evaluation report](https://docs.comet.rpamis.com/en/eval/comet-native-vs-040-experiment) for conditions and limitations, and the [Changelog](https://docs.comet.rpamis.com/en/changelog) for all changes.
 
 > Native and Classic are not lightweight and heavyweight tiers, and neither upgrades into the other. Native is for strong models that can plan and verify autonomously; Classic is for scenarios that benefit from a complete phased methodology and stronger constraints.
 
