@@ -1,3 +1,4 @@
+import { markNativeSupervisorChildVerified } from '../../helpers/native-supervisor-results.js';
 import { promises as fs } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
@@ -42,7 +43,6 @@ import { writeNativePortableState } from '../../../domains/comet-native/native-p
 import {
   createNativeSupervisorState,
   integrateNativeSupervisorChild,
-  markNativeSupervisorChildVerified,
   prepareNativeSupervisorIntegrationWorkspace,
   readNativeSupervisorState,
   recordNativeSupervisorFinalVerification,
@@ -601,6 +601,25 @@ children:
     await expect(
       fs.readFile(path.join(resumed.archiveDir, 'specs', 'beta', 'spec.md'), 'utf8'),
     ).resolves.toBe(originalBeta);
+  });
+
+  it('preserves a concurrent canonical Spec edit when recovering an interrupted Archive', async () => {
+    const state = await archiveReady('canonical-edit-recovery');
+    await expect(
+      archiveNativePortableChange({
+        paths,
+        name: state.name,
+        hooks: { afterSpecApplied: () => Promise.reject(new Error('pause-after-spec')) },
+      }),
+    ).rejects.toThrow('pause-after-spec');
+    const file = path.join(paths.specsDir, 'sample', 'spec.md');
+    const edited = '# Sample\n\nConcurrent user change.\n';
+    await fs.writeFile(file, edited);
+    await expect(archiveNativePortableChange({ paths, name: state.name })).rejects.toThrow(
+      'changed after Archive',
+    );
+    expect(await fs.readFile(file, 'utf8')).toBe(edited);
+    expect((await readNativePortableChange(paths, state.name)).archived).toBe(false);
   });
 
   it('reports interrupted Archive transactions in named and project-wide Doctor and repairs them', async () => {
