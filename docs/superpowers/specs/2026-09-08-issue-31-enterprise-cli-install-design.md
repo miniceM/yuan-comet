@@ -4,9 +4,9 @@
 >
 > 关联：[Issue #31](https://github.com/miniceM/yuan-comet/issues/31)
 >
-> 状态：方案设计完成，待评审；包名已由用户确认；npm 包版本与 IAM/DOP 帮助输出已有内网截图证据；仓库地址预留手工填写，剩余验证项见第 9 节。
+> 状态：方案已实现；包名、版本、IAM/DOP 帮助输出和 GH 兼容性约定已由用户确认；企业 registry 仍预留手工填写，真实内网安装验收见第 9 节。
 >
-> 本次交付仅为设计文档，不执行安装、不修改运行时代码。
+> 实现已落在 `domains/enterprise-cli/`，并由 `comet init` 在写入项目或全局资产前统一调用；本文保留设计边界和内网验收清单。
 
 ## 1. 设计结论与范围
 
@@ -197,7 +197,7 @@ CLI 安装完成不代表 IAM 认证已完成。
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | `domains/enterprise-cli/index.ts`                                             | 公开检查/补装入口与类型                                      |
 | `domains/enterprise-cli/catalog.ts`                                           | 三个命令的包映射、版本、探测契约                             |
-| `domains/enterprise-cli/config.ts`                                            | 企业配置解析与校验                                           |
+| `domains/enterprise-cli/`                                                     | 企业包目录、配置解析与校验                                   |
 | `domains/enterprise-cli/ensure.ts`                                            | 探测、计划、安装、复检与错误分类                             |
 | `domains/enterprise-cli/types.ts`                                             | 工具结果、错误与后续动作结构                                 |
 | `platform/process/`                                                           | 通用命令解析、受限执行、npm 调用和进程清理；优先组合既有能力 |
@@ -209,7 +209,7 @@ CLI 安装完成不代表 IAM 认证已完成。
 
 不新增 workflow runtime entry，不手写 `.mjs` 生成物，不向 `assets/manifest.json` 登记外部 CLI。本功能通过现有 CLI build 打包；实施时核对 npm 发布产物确实包含新 domain。安装指南在 `docs/` 编写，README 仅补必要的依赖说明和文档链接，遵循先中文后英文。
 
-实施顺序：先根据已确认包名和版本完成 bin 与剩余探测契约核验，再实现平台适配与独立 domain，随后接入 init 和输出，最后执行跨平台安装验收、更新安装指南与发布说明。本次仅新增内部设计文档，不改版本号或 Changelog；实现形成用户可见能力后，再按仓库规则检查 master、当前版本和上个发布 tag，写入对应版本的英文 Changelog。
+实施结果：已根据确认的包名、版本、bin 元数据和探测契约实现独立 domain，接入 `comet init` 的前置检查与 JSON/文本输出，并补充安装指南、测试、Changelog；真实内网安装、传递依赖和跨平台验收仍按第 9 节执行。
 
 ## 8. 验收与验证计划
 

@@ -152,6 +152,8 @@ Requirements:
 npm install -g @cli-tools/yuan-comet
 ```
 
+The enterprise `comet init` checks `iam`, `dop`, and the enterprise Gitee CLI exposed as `gh`. Missing commands are installed at their pinned versions from the enterprise npm registry; fill in the registry in `domains/enterprise-cli/catalog.ts` or set `COMET_ENTERPRISE_NPM_REGISTRY`, and provide npm credentials through the deployment environment. Comet does not fall back to the public npm registry or modify your npm configuration. After installation, it reminds you to run `iam auth login --system <system>` and verify the result with `iam auth status --json`.
+
 ## Quick Start
 
 A single global initialization makes `/comet` available through the selected hosts in every project:

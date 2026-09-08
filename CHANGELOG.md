@@ -6,6 +6,7 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ### Added
 
+- **Enterprise CLI provisioning**: `comet init` now verifies `iam`, `dop`, and the enterprise `gitee-cli` compatible `gh` command, installs missing scoped CLI packages from the configured enterprise npm registry, rechecks their executables, and reports the IAM login follow-up without modifying existing CLI configuration.
 - **Package rename to @cli-tools/yuan-comet**: Renamed the published npm package to `@cli-tools/yuan-comet` to distinguish this enterprise distribution from upstream Comet while preserving compatibility across update checks and installation targets.
 - **Enterprise SDD skill name projection**: Platform skill installation now projects user-facing skills to the `/sdd-*` prefix (e.g. `/sdd`, `/sdd-open`, `/sdd-native`, `/sdd-classic`, `/sdd-design`, `/sdd-build`, `/sdd-verify`, `/sdd-archive`) across IDE and agent platforms (Cursor, Claude Code, OpenCode, Windsurf, Pi), transforming frontmatter names and in-file slash commands while preserving canonical upstream assets for low-conflict upstream synchronization.
 - **Enterprise Guard managed runtime and integrity verification**: Enterprise Gateway, Runner, and platform plugin bridges now install into a versioned, tamper-evident managed runtime directory with manifest schema validation and sha256 checksums. Updates write and verify new runtime versions before atomically switching active pointers, and doctor inspects file digests, permissions, protocol compatibility, tool coverage, and deduplication.

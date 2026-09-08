@@ -135,6 +135,8 @@ Comet的许多能力都能够在海内外大厂实践中找到相似之处，想
 npm install -g @cli-tools/yuan-comet
 ```
 
+企业版 `comet init` 会校验 `iam`、`dop` 和企业 Gitee CLI（命令名为 `gh`）。缺失时按固定版本从企业 npm 仓库补装；请在部署配置中填写 registry（源码目录 `domains/enterprise-cli/catalog.ts`，或设置 `COMET_ENTERPRISE_NPM_REGISTRY`）及 npm 凭据。Comet 不回退公共 npm，也不会修改你的 npm 配置。补装成功后会提示运行 `iam auth login --system <system>` 完成登录，并可用 `iam auth status --json` 验证状态。
+
 ## 快速开始
 
 一次全局初始化即可让已选宿主中的 `/comet` 在所有项目可用：
