@@ -365,6 +365,34 @@ function assertTransactionState(
   }
 }
 
+async function assertAppliedSpecsUnchanged(
+  paths: NativeProjectPaths,
+  transaction: NativePortableArchiveTransaction,
+): Promise<void> {
+  for (const change of transaction.spec_changes.slice(0, transaction.next_spec_index)) {
+    const ref = `${change.capability}/spec.md`;
+    const target = path.join(paths.specsDir, ref);
+    if (change.operation === 'remove') {
+      if (!(await exists(target))) continue;
+    } else {
+      try {
+        const current = await readNativeBoundedTextFile({
+          root: paths.specsDir,
+          ref,
+          maxBytes: null,
+          includeHash: false,
+        });
+        if (current.text === change.content) continue;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    throw new Error(
+      `Canonical Spec ${ref} changed after Archive applied it; preserve the concurrent edit and resolve it before resuming Archive`,
+    );
+  }
+}
+
 export async function inspectNativePortableArchive(options: {
   paths: NativeProjectPaths;
   name: string;
@@ -383,6 +411,13 @@ export async function inspectNativePortableArchive(options: {
     blockers.push((error as Error).message);
   }
   const transaction = await readTransaction(options.paths, options.name);
+  if (transaction) {
+    try {
+      await assertAppliedSpecsUnchanged(options.paths, transaction);
+    } catch (error) {
+      blockers.push((error as Error).message);
+    }
+  }
   if (transaction === null) {
     try {
       const drift = await inspectNativePortableAcceptanceDrift({
@@ -538,6 +573,17 @@ export async function archiveNativePortableChange(options: {
         );
       }
 
+      await assertAppliedSpecsUnchanged(options.paths, transaction);
+      const archiveOwnedPaths = transaction.spec_changes
+        .slice(0, transaction.next_spec_index)
+        .map(({ capability }) =>
+          path
+            .relative(
+              options.paths.projectRoot,
+              path.join(options.paths.specsDir, capability, 'spec.md'),
+            )
+            .replaceAll('\\', '/'),
+        );
       let supervisorDelivered = false;
       if (transaction.status === 'prepared' && supervisor && !state.archived) {
         // Do not publish the parent's canonical Specs before Supervisor has
@@ -545,6 +591,7 @@ export async function archiveNativePortableChange(options: {
         const delivered = await finalizeNativeSupervisorDeliveryLocked({
           paths: options.paths,
           state: supervisor,
+          archiveOwnedPaths,
         });
         supervisor = delivered.state;
         supervisorDelivered = true;
@@ -568,6 +615,8 @@ export async function archiveNativePortableChange(options: {
         await writeTransaction(options.paths, transaction);
       }
 
+      await assertAppliedSpecsUnchanged(options.paths, transaction);
+
       if (transaction.status === 'specs-applied') {
         // Supervisor delivery is the parent-level commit boundary. Do it before
         // finalizing the portable parent as archived so a target-drift blocker
@@ -576,6 +625,7 @@ export async function archiveNativePortableChange(options: {
           const delivered = await finalizeNativeSupervisorDeliveryLocked({
             paths: options.paths,
             state: supervisor,
+            archiveOwnedPaths,
           });
           supervisor = delivered.state;
           supervisorDelivered = true;
@@ -621,6 +671,7 @@ export async function archiveNativePortableChange(options: {
           await finalizeNativeSupervisorDeliveryLocked({
             paths: options.paths,
             state: supervisor,
+            archiveOwnedPaths,
           });
           supervisorDelivered = true;
         }
@@ -632,6 +683,7 @@ export async function archiveNativePortableChange(options: {
           await finalizeNativeSupervisorDeliveryLocked({
             paths: options.paths,
             state: supervisor,
+            archiveOwnedPaths,
           });
         }
         await fs.mkdir(options.paths.archiveDir, { recursive: true });
