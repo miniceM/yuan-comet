@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import os from 'os';
+import * as updateCommands from '../../app/commands/update.js';
 
 const { rmdirMock, writeFileMock } = vi.hoisted(() => ({
   rmdirMock: vi.fn(),
@@ -1159,6 +1160,53 @@ describe('uninstall', () => {
       expect(await fileExists(cometDir)).toBe(false);
     });
 
+    it.each(['native', 'classic'] as const)(
+      'preserves the other workflow runtime when removing only %s',
+      async (workflow) => {
+        await writeNativeProjectConfig('docs', 'both');
+        await createNativeWorkingTree('docs');
+        const runtime = path.join(tmpDir, '.comet', 'runtime');
+        for (const directory of ['changes', 'locks', 'transactions']) {
+          await fs.mkdir(path.join(runtime, 'native', directory), { recursive: true });
+        }
+        await fs.mkdir(path.join(runtime, 'classic'), { recursive: true });
+        await fs.writeFile(path.join(runtime, 'classic', 'user-state.json'), '{}');
+        const result = await removeWorkingDirs(tmpDir, { workflows: [workflow] });
+        expect(result.failed).toBe(0);
+        expect(await fileExists(path.join(runtime, 'native'))).toBe(workflow === 'classic');
+        expect(await fs.readFile(path.join(runtime, 'classic', 'user-state.json'), 'utf8')).toBe(
+          '{}',
+        );
+      },
+    );
+
+    it('preserves unrecognized files inside the current Native runtime', async () => {
+      await writeNativeProjectConfig('docs');
+      await createNativeWorkingTree('docs');
+      const runtime = path.join(tmpDir, '.comet', 'runtime', 'native');
+      await fs.mkdir(runtime, { recursive: true });
+      const file = path.join(runtime, 'user-notes.md');
+      await fs.writeFile(file, 'Keep this content');
+      await removeWorkingDirs(tmpDir);
+      expect(await fs.readFile(file, 'utf8')).toBe('Keep this content');
+    });
+
+    it('fully uninstalls Classic after selectively uninstalling Native', async () => {
+      const configPath = await writeNativeProjectConfig('docs', 'both');
+      await createNativeWorkingTree('docs');
+      const runtime = path.join(tmpDir, '.comet', 'runtime', 'native');
+      for (const directory of ['changes', 'locks', 'transactions']) {
+        await fs.mkdir(path.join(runtime, directory), { recursive: true });
+      }
+      expect((await removeWorkingDirs(tmpDir, { workflows: ['native'] })).failed).toBe(0);
+      await fs.writeFile(
+        configPath,
+        'schema: comet.project.v1\ndefault_workflow: classic\nworkflows: [classic]\nclassic:\n  artifact_layout: docs\n',
+      );
+      expect((await removeWorkingDirs(tmpDir)).failed).toBe(0);
+      expect(await fileExists(path.join(tmpDir, '.comet'))).toBe(false);
+    });
+
     it('removes empty docs/superpowers directories', async () => {
       const specsDir = path.join(tmpDir, 'docs', 'superpowers', 'specs');
       const plansDir = path.join(tmpDir, 'docs', 'superpowers', 'plans');
@@ -1603,8 +1651,62 @@ describe('uninstallCommand interactive selection', () => {
 
   afterEach(async () => {
     homedirSpy.mockRestore();
+    process.exitCode = 0;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
+
+  it('reports indexed project inspection failure without treating it as an unselected project', async () => {
+    await upsertProjectInstallation(tmpDir, [{ platform: 'claude', language: 'en' }], 'init');
+    const inspect = vi
+      .spyOn(updateCommands, 'detectInstalledCometTargets')
+      .mockRejectedValueOnce(new Error('inspection unavailable'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      await uninstallCommand(tmpDir, { allProjects: true, force: true, json: true });
+      const result = JSON.parse(log.mock.calls.map((call) => call.join(' ')).join('\n'));
+      expect(result.projects).toEqual([
+        expect.objectContaining({
+          status: 'failed',
+          reason: 'unable to inspect project: inspection unavailable',
+        }),
+      ]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      inspect.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  it.each([true, false])(
+    'reports partial failure with a nonzero exit status (json=%s)',
+    async (json) => {
+      await fs.mkdir(path.join(tmpDir, '.claude/skills/comet-native'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.claude/skills/comet-native/SKILL.md'),
+        '# Comet Native\n',
+      );
+      await fs.writeFile(path.join(tmpDir, '.claude/settings.local.json'), '{broken-json');
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await uninstallCommand(tmpDir, {
+          scope: 'project',
+          currentProject: true,
+          force: true,
+          json,
+        });
+        expect(process.exitCode).toBe(1);
+        if (json) {
+          const result = JSON.parse(log.mock.calls.map((call) => call.join(' ')).join('\n'));
+          expect(result.summary.totalFailures).toBeGreaterThan(0);
+        }
+        await expect(
+          fs.access(path.join(tmpDir, '.claude/skills/comet-native/SKILL.md')),
+        ).resolves.toBeUndefined();
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
 
   it('uninstalls an explicitly scoped canonical global Codex install without a detection path', async () => {
     const fakeHome = path.join(tmpDir, 'fake-home');
@@ -1853,6 +1955,7 @@ describe('uninstallCommand interactive selection', () => {
         skillsRemoved: 0,
       });
       expect(result.summary.totalFailures).toBeGreaterThan(0);
+      expect(process.exitCode).toBe(1);
     } finally {
       log.mockRestore();
     }
@@ -2373,6 +2476,7 @@ describe('uninstallCommand interactive selection', () => {
       await uninstallCommand(project, { allProjects: true, force: true, json: true });
       const result = JSON.parse(log.mock.calls.map((call) => call.join(' ')).join('\n'));
       expect(result.projects[0].status).toBe('failed');
+      expect(process.exitCode).toBe(1);
       expect(result.projects[0].summary.totalFailures).toBeGreaterThan(0);
     } finally {
       log.mockRestore();
