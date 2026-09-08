@@ -60,7 +60,45 @@ comet classic openspec -- --version
 
 This flow requires **OpenSpec >= 1.5.0**. Stop immediately if the version is older than 1.5.0, cannot be parsed, the command is unavailable, or it exits non-zero. Ask the user to run `npm install -g @fission-ai/openspec@latest` and retry. Never continue with an older CLI that lacks the `applyRequires`, `artifactPaths`, `changeRoot`, or `resolvedOutputPath` contracts.
 
-### 1. Explore Ideas and Clarify Requirements
+### 0d. Enterprise Identity and External Dependency Checks (iam and dop)
+
+Before starting requirement exploration and change creation, check enterprise identity authentication and external dependencies:
+
+1. **iam Authentication Check**:
+   Run the authentication status command:
+   ```bash
+   iam auth status --json
+   ```
+   - Parse the returned result: the `credentials` list must not be empty, and each item must have `status` as `logged` (e.g. valid credentials for both devops and code repositories).
+   - **Unauthorized Handling**: If the user is not logged in (e.g. empty credentials), credentials are insufficient, or the command exits non-zero, output a clear prompt (recommend running `iam auth login`), and **stop the flow immediately**. Creating new changes in an unauthenticated state is strictly prohibited.
+
+2. **dop CLI Availability Check**:
+   Run:
+   ```bash
+   dop change list
+   ```
+   - If the `dop` command is unavailable or not installed: output a warning (enterprise dop CLI not detected) and degrade gracefully to pure natural language interaction mode.
+
+3. **Pending DOP Task Check**:
+   - Inspect historical archive directories (e.g. `<classic-archive-root>/*/.meta.json` or `.comet.yaml`) for uncompleted external records (`dop_completion.status: pending`).
+   - If present: warn the user that PRs for past changes were delivered but external DOP tasks remain pending, recommend checking or finishing them, and ask the user to confirm before proceeding.
+
+### 1. Explore Ideas and Clarify Requirements (with DOP Requirement Fetching)
+
+Before entering requirement clarification, prepare the requirement context based on user input:
+
+1. **DOP Requirement Association and Fetching**:
+   - **Change ID Match**: If the user request or conversation input matches `^[A-Z]{2,6}\d+$` (e.g. `ARD123456`), treat it directly as `change-id` and execute:
+     ```bash
+     dop change view <change-id> --json
+     ```
+     Retrieve the complete requirement details for the change, including `summary`, `description`, `storyAC` (acceptance criteria for user stories), `subSystems` (associated subsystems), and `userStory` (user stories and release schedule).
+     If fetching details fails (e.g. network timeout or change not found), output a warning and allow the user to provide or confirm requirement details manually to continue.
+   - **Natural Language Input**: If the user input is a narrative description rather than a change ID, and `dop` is available, run `dop change list` (or `dop change list --json`) to display candidate changes for the user to choose from or enter a `change-id`; the user may also skip to proceed with pure natural language.
+2. **Requirement Context Injection**:
+   - Use the retrieved or confirmed `summary`, `description`, `storyAC`, `subSystems`, and `userStory` as the source of truth, integrating them directly into the clarification summary so that goals, non-goals, scope boundaries, and draft acceptance scenarios align with them.
+   - In the subsequent `proposal.md`, prioritize referencing DOP requirement contents (combining `summary`, `description`, and `storyAC`) for the business context and overall acceptance criteria.
+   - When initializing the change state, record the associated `change_id` and mark `dop_status: "spec-in-progress"` in local metadata (since the real dop CLI lacks an update subcommand, progress is tracked in local metadata).
 
 **Immediately execute:** Use the Skill tool to load the `openspec-explore` skill. Skipping this step is prohibited.
 
