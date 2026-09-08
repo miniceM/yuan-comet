@@ -111,6 +111,8 @@ See `comet-classic/reference/intent-frame.md` for complete field meanings; norma
 - User explicitly describes a lightweight/medium change that can fit in a single OpenSpec change, should be executed through OpenSpec apply, and does not need full `/comet-classic` deep design/plan → prefer `tweak`
 - Copy, config, docs, prompt, or a lightweight/medium single OpenSpec change → prefer `tweak`
 - New capability, public API, schema change, cross-module coordination, or architecture work → prefer `full`
+- When user input matches `^[A-Z]{2,6}\d+$` (e.g. `ARD123456`), extract it into `slots.change_id` as the credential for `/comet-open` to fetch DOP requirement details
+- Classic mode supports enterprise lifecycle integrations at flow start and end: flow start verifies identity via `iam auth status --json` (unauthorized prompts `iam auth login` and stops) and automatically injects requirement context via `dop change view <change-id> --json`; flow end closes the external workflow via `dop change done <change-id>` upon PR delivery
 - Multiple active changes without an explicit change → `ask_user`
 - Low confidence, missing key evidence, or explicit workflow conflicting with risk signals → `ask_user`
 

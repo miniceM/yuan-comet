@@ -165,7 +165,7 @@ describe('Comet project status', () => {
         status: 'active',
         stateVersion: 1,
         verificationResult: 'pending',
-        continuation: expect.objectContaining({ action: 'confirm-shape' }),
+        continuation: expect.objectContaining({ action: 'prepare-shape-confirmation' }),
       }),
     ]);
   });
@@ -488,6 +488,26 @@ describe('Comet project status', () => {
         error: expect.any(String),
       }),
       expect.objectContaining({ name: 'classic-healthy', phase: 'open' }),
+    ]);
+  });
+
+  it('keeps an unreadable portable change as an error entry instead of failing the Native section', async () => {
+    await writeProjectConfig(projectRoot, bothProjectConfig('.'));
+    const paths = await nativeProjectPaths(projectRoot, '.');
+    await createNativePortableChange({ paths, name: 'native-healthy', language: 'en' });
+    const staleDir = path.join(paths.changesDir, 'native-stale-copy');
+    await fs.mkdir(staleDir, { recursive: true });
+    await fs.writeFile(
+      path.join(staleDir, 'comet-state.yaml'),
+      'schema: comet.native.v4\nphase: [\n',
+    );
+
+    const status = await inspectCometProjectStatus(projectRoot);
+
+    expect(status.workflows.native.error).toBeUndefined();
+    expect(status.workflows.native.changes).toEqual([
+      expect.objectContaining({ name: 'native-healthy' }),
+      expect.objectContaining({ name: 'native-stale-copy', error: expect.any(String) }),
     ]);
   });
 

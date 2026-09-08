@@ -10,6 +10,7 @@ import {
   Skeleton,
   Switch,
   Tag,
+  theme as antdTheme,
   Tooltip,
 } from 'antd';
 import {
@@ -286,7 +287,7 @@ const PERSONAL_MEMORY_FILTERS = [
   {
     key: 'all',
     label: '全部记忆',
-    description: '个人记忆保存未来任务仍然有用的信息',
+    description: '全部当前有效的个人记忆；历史记录单独查看',
     example: '包括个人偏好与事实、协作约定和任务经验。',
   },
   {
@@ -347,6 +348,12 @@ function projectKnowledgeStateLabel(state) {
   return PROJECT_KNOWLEDGE_STATE_LABELS[state] ?? '待确认';
 }
 
+function projectKnowledgeStateMatches(record, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'active') return record.state !== 'superseded';
+  return record.state === filter;
+}
+
 function projectPolicyActivationLabel(activation) {
   if (activation?.kind === 'verification') return '项目验证命令约束';
   if (activation?.kind === 'skill-candidate') return 'Skill 候选（仅建议）';
@@ -400,6 +407,7 @@ export function App({
     <ConfigProvider
       getPopupContainer={portalContainer ? () => portalContainer : undefined}
       theme={{
+        algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
           colorPrimary: theme === 'dark' ? '#7fa8ff' : '#255ed8',
           colorBgContainer: theme === 'dark' ? '#151923' : '#ffffff',
@@ -407,6 +415,8 @@ export function App({
           colorBgLayout: theme === 'dark' ? '#0e1420' : '#eef1f5',
           colorText: theme === 'dark' ? '#edf2fb' : '#101827',
           colorTextSecondary: theme === 'dark' ? '#aab5c8' : '#5f6979',
+          colorTextPlaceholder: theme === 'dark' ? '#8791a2' : '#6f7a8a',
+          colorTextDisabled: theme === 'dark' ? '#8791a2' : '#929baa',
           colorBorder: theme === 'dark' ? '#293345' : '#e3e8ef',
           colorSplit: theme === 'dark' ? '#293345' : '#edf0f4',
           colorFillAlter: theme === 'dark' ? '#182131' : '#f6f8fb',
@@ -1924,7 +1934,7 @@ function PluginCenterHeader({ meta = [], actions = null, help = null }) {
             className={`dashboard-plugin-context-item is-${item.tone ?? 'neutral'}`}
             aria-label={`${item.label}：${item.value}`}
           >
-            {item.value}
+            {item.displayValue ?? item.value}
           </span>
         ))}
         {help}
@@ -2877,6 +2887,19 @@ function projectKnowledgeSourcePreviewKind(source, format) {
   return 'text';
 }
 
+function projectKnowledgeCorpusKindLabel(kind) {
+  return (
+    {
+      'native-spec': 'Native Spec',
+      'classic-spec': 'Classic Spec',
+      'native-archive': 'Native 归档',
+      'classic-archive': 'Classic 归档',
+      superpowers: '归档引用',
+      custom: '自定义 Markdown',
+    }[kind] ?? 'Markdown'
+  );
+}
+
 async function renderProjectKnowledgeSource(content, kind) {
   const raw = String(content ?? '');
   if (!raw.trim()) return '';
@@ -2974,13 +2997,29 @@ function ProjectKnowledgeSourcePreviewModal({
 
   if (!selectedSource) return null;
   const updatedAt = sourceContent?.modifiedAt ?? selectedSource.latestUpdatedAt;
+  const relatedKnowledgeGroups = Array.from(
+    selectedSource.records.reduce((groups, record) => {
+      const key = projectKnowledgeRecordLogicalId(record);
+      const group = groups.get(key) ?? [];
+      group.push(record);
+      groups.set(key, group);
+      return groups;
+    }, new Map()),
+  ).map(([logicalId, records]) => ({
+    logicalId,
+    records: records.toSorted(
+      (left, right) =>
+        Number(right.state !== 'superseded') - Number(left.state !== 'superseded') ||
+        new Date(right.updatedAt ?? 0).getTime() - new Date(left.updatedAt ?? 0).getTime(),
+    ),
+  }));
 
   return (
     <ProjectKnowledgePreviewModal
       open
-      title="项目知识来源详情"
-      description="查看项目知识关联文件的渲染结果和来源上下文"
-      ariaLabel="项目知识来源详情"
+      title="检索语料详情"
+      description="查看实际参与项目知识召回的 Markdown 内容和关联知识"
+      ariaLabel="检索语料详情"
       onClose={onClose}
     >
       {({ fullscreen }) => (
@@ -3027,25 +3066,113 @@ function ProjectKnowledgeSourcePreviewModal({
               <dl>
                 <div>
                   <dt>关联记录</dt>
-                  <dd>{selectedSource.records.length} 条</dd>
+                  <dd>
+                    {relatedKnowledgeGroups.length > 0
+                      ? `${relatedKnowledgeGroups.length} 条知识 · ${selectedSource.records.length} 个版本`
+                      : '暂无已学习记录'}
+                  </dd>
                 </div>
                 <div>
                   <dt>最近更新</dt>
                   <dd>{updatedAt ? formatTimestamp(updatedAt) : '—'}</dd>
                 </div>
               </dl>
-              {selectedSource.records.length > 0 && (
+              {relatedKnowledgeGroups.length > 0 && (
                 <section>
                   <h4>关联项目知识</h4>
                   <div className="dashboard-knowledge-source-related">
-                    {selectedSource.records.map((record) => (
-                      <button key={record.id} type="button" onClick={() => onSelectRecord(record)}>
-                        <strong>{record.title}</strong>
-                        <span>{record.summary}</span>
-                      </button>
-                    ))}
+                    {relatedKnowledgeGroups.map((group) => {
+                      const current =
+                        group.records.find((record) => record.state !== 'superseded') ??
+                        group.records[0];
+                      return (
+                        <article key={group.logicalId}>
+                          <button type="button" onClick={() => onSelectRecord(current)}>
+                            <strong>{current.title}</strong>
+                            <span>
+                              {projectKnowledgeTypeLabel(current.type)} ·{' '}
+                              {projectKnowledgeStateLabel(current.state)} ·{' '}
+                              {projectKnowledgeRecordVersionLabel(current, group.records)}
+                            </span>
+                          </button>
+                          <div className="dashboard-knowledge-source-related-versions">
+                            {group.records.map((record) => {
+                              const references = projectKnowledgeRecordSourceReferences(
+                                record,
+                                selectedSource.source,
+                              );
+                              return (
+                                <div key={record.id}>
+                                  <div>
+                                    <strong>
+                                      {projectKnowledgeRecordVersionLabel(record, group.records)}
+                                    </strong>
+                                    <span>
+                                      {projectKnowledgeStateLabel(record.state)} ·{' '}
+                                      {formatTimestamp(record.updatedAt)}
+                                    </span>
+                                  </div>
+                                  <p>{record.summary}</p>
+                                  {record.conclusions?.map((conclusion, index) => (
+                                    <p key={`${record.id}-conclusion-${index}`}>
+                                      结论：{conclusion.text}
+                                    </p>
+                                  ))}
+                                  {record.relations?.length > 0 && (
+                                    <p>
+                                      关系：
+                                      {record.relations
+                                        .map(
+                                          (relation) => `${relation.type} → ${relation.targetId}`,
+                                        )
+                                        .join('、')}
+                                    </p>
+                                  )}
+                                  {references.length > 0 && (
+                                    <ul>
+                                      {references.map((reference, index) => (
+                                        <li key={`${record.id}-reference-${index}`}>
+                                          <code>
+                                            {reference.source}
+                                            {reference.anchor ? `#${reference.anchor}` : ''}
+                                            {reference.lineStart
+                                              ? `#L${reference.lineStart}${reference.lineEnd ? `-L${reference.lineEnd}` : ''}`
+                                              : ''}
+                                          </code>
+                                          <span>{reference.role}</span>
+                                          {reference.evidence && <em>{reference.evidence}</em>}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {record.sourceVersions?.length > 0 && (
+                                    <small>
+                                      版本依据：
+                                      {record.sourceVersions
+                                        .filter(
+                                          (version) => version.source === selectedSource.source,
+                                        )
+                                        .map(
+                                          (version) =>
+                                            `${formatFileSize(version.size) ?? '未知大小'} · ${formatTimestamp(new Date(version.modifiedAt).toISOString())} · 内容摘要 ${version.digest?.slice(0, 12) ?? '旧记录未保存'}`,
+                                        )
+                                        .join('、') || '未记录'}
+                                    </small>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 </section>
+              )}
+              {relatedKnowledgeGroups.length === 0 && (
+                <p className="dashboard-knowledge-inspector-muted">
+                  这个文件目前只是可检索来源，还没有形成可用的项目知识记录。
+                </p>
               )}
               <section>
                 <h4>文件原文</h4>
@@ -3258,6 +3385,45 @@ function LoadingState() {
   );
 }
 
+function projectKnowledgeCountsFromRecords(records) {
+  return {
+    active: records.filter((record) => record?.state !== 'superseded').length,
+    trial: records.filter((record) => record?.state === 'trial').length,
+    proven: records.filter((record) => record?.state === 'proven').length,
+    enforced: records.filter((record) => record?.state === 'enforced').length,
+    superseded: records.filter((record) => record?.state === 'superseded').length,
+    total: records.length,
+    displayed: records.length,
+  };
+}
+
+function reconcileProjectKnowledgeCounts(previous, beforeRecords, nextRecords, changedRecords) {
+  if (
+    !isDashboardRecord(previous) ||
+    !['active', 'trial', 'proven', 'enforced', 'superseded', 'total'].every(
+      (key) => typeof previous[key] === 'number',
+    )
+  ) {
+    return projectKnowledgeCountsFromRecords(nextRecords);
+  }
+  const next = { ...previous, displayed: nextRecords.length };
+  const beforeById = new Map(beforeRecords.map((record) => [record?.id, record]));
+  for (const changed of changedRecords) {
+    const before = beforeById.get(changed?.id);
+    if (before?.state === changed?.state) continue;
+    if (before === undefined) next.total += 1;
+    if (before?.state) {
+      next[before.state] = Math.max(0, next[before.state] - 1);
+      if (before.state !== 'superseded') next.active = Math.max(0, next.active - 1);
+    }
+    if (changed?.state) {
+      next[changed.state] += 1;
+      if (changed.state !== 'superseded') next.active += 1;
+    }
+  }
+  return next;
+}
+
 function reconcilePluginInvocationResult(page, pluginId, capability, result, input) {
   if (
     pluginId === 'comet.personal-memory' &&
@@ -3312,12 +3478,9 @@ function reconcilePluginInvocationResult(page, pluginId, capability, result, inp
         data: {
           ...page.data,
           records: nextRecords,
-          counts: {
-            trial: nextRecords.filter((record) => record?.state === 'trial').length,
-            proven: nextRecords.filter((record) => record?.state === 'proven').length,
-            enforced: nextRecords.filter((record) => record?.state === 'enforced').length,
-            superseded: nextRecords.filter((record) => record?.state === 'superseded').length,
-          },
+          counts: reconcileProjectKnowledgeCounts(page.data.counts, records, nextRecords, [
+            result.record,
+          ]),
         },
       };
     }
@@ -3342,12 +3505,12 @@ function reconcilePluginInvocationResult(page, pluginId, capability, result, inp
         data: {
           ...page.data,
           records: nextRecords,
-          counts: {
-            trial: nextRecords.filter((record) => record?.state === 'trial').length,
-            proven: nextRecords.filter((record) => record?.state === 'proven').length,
-            enforced: nextRecords.filter((record) => record?.state === 'enforced').length,
-            superseded: nextRecords.filter((record) => record?.state === 'superseded').length,
-          },
+          counts: reconcileProjectKnowledgeCounts(
+            page.data.counts,
+            records,
+            nextRecords,
+            refreshedRecords,
+          ),
         },
       };
     }
@@ -3645,6 +3808,34 @@ function projectKnowledgeRecordSources(record) {
       }),
     ),
   ];
+}
+
+function projectKnowledgeRecordSourceReferences(record, sourcePath) {
+  return [
+    ...(record.conclusions ?? []).flatMap((conclusion) =>
+      (conclusion.sources ?? []).map((source) => ({ ...source, role: '结论' })),
+    ),
+    ...(record.relations ?? []).flatMap((relation) =>
+      (relation.sources ?? []).map((source) => ({
+        ...source,
+        role: `关系：${relation.type} → ${relation.targetId}`,
+      })),
+    ),
+  ].filter((source) => projectKnowledgeSourcePath(source.source) === sourcePath);
+}
+
+function projectKnowledgeRecordLogicalId(record) {
+  const versionMarker = record.id.lastIndexOf('-v-');
+  return versionMarker > 0 ? record.id.slice(0, versionMarker) : record.id;
+}
+
+function projectKnowledgeRecordVersionLabel(record, records) {
+  const active = record.state !== 'superseded';
+  const versions = records.filter(
+    (candidate) =>
+      projectKnowledgeRecordLogicalId(candidate) === projectKnowledgeRecordLogicalId(record),
+  );
+  return active ? '当前版本' : `历史版本 ${versions.indexOf(record) + 1}`;
 }
 
 function projectKnowledgeSourcePath(source) {
@@ -4973,7 +5164,7 @@ function ProjectKnowledgeSettings({ page, data, readOnly = false, onInvoke }) {
     <div className="dashboard-settings-stack">
       <SettingsSectionHead
         icon={DatabaseOutlined}
-        title="项目规则设置"
+        title="项目知识设置"
         description="管理当前项目的知识检索、Provider 与插件生命周期"
         status={disabled ? '已暂停' : provider}
       />
@@ -5208,13 +5399,17 @@ function ProjectKnowledgeSettings({ page, data, readOnly = false, onInvoke }) {
 function openProjectKnowledgeCorrection(record, onInvoke) {
   const restoring = record.state === 'superseded';
   Modal.confirm({
+    centered: true,
+    width: 'min(800px, calc(100vw - 32px))',
+    icon: null,
     title: restoring ? '纠正并恢复项目知识' : '纠正项目知识记录',
     content: (
       <Input.TextArea
         id="project-knowledge-correction"
         defaultValue={record.summary}
         placeholder="说明需要如何修正这条项目知识"
-        autoSize={{ minRows: 4, maxRows: 8 }}
+        rows={14}
+        style={{ height: 'min(360px, 50dvh)', maxHeight: '50dvh', resize: 'vertical' }}
       />
     ),
     okText: restoring ? '保存并恢复' : '保存纠正',
@@ -5232,6 +5427,7 @@ function openProjectKnowledgeCorrection(record, onInvoke) {
 
 function ProjectKnowledgeRegistry({
   records,
+  workspaceTab,
   visibleRecords,
   selectedRecord,
   selectedRecordId,
@@ -5247,6 +5443,7 @@ function ProjectKnowledgeRegistry({
   sortOrder,
   onSortOrderChange,
   diagnostics,
+  indexedSourcePaths,
   provider,
   readOnly = false,
   onInvoke,
@@ -5256,7 +5453,9 @@ function ProjectKnowledgeRegistry({
     ? projectKnowledgeDiagnosticCopy(firstDiagnostic)
     : { label: '', message: '' };
   const countedRecords =
-    stateFilter === 'all' ? records : records.filter((record) => record.state === stateFilter);
+    stateFilter === 'all'
+      ? records
+      : records.filter((record) => projectKnowledgeStateMatches(record, stateFilter));
 
   return (
     <div className="dashboard-knowledge-registry">
@@ -5279,7 +5478,9 @@ function ProjectKnowledgeRegistry({
           <span>{countedRecords.length}</span>
         </button>
         <div className="dashboard-knowledge-category-groups">
-          {PROJECT_KNOWLEDGE_CATEGORY_GROUPS.map((group) => (
+          {PROJECT_KNOWLEDGE_CATEGORY_GROUPS.filter(
+            (group) => workspaceTab === 'history' || group.key === workspaceTab,
+          ).map((group) => (
             <section key={group.key} aria-labelledby={`knowledge-category-${group.key}`}>
               <h3 id={`knowledge-category-${group.key}`}>
                 <span>{group.label}</span>
@@ -5349,6 +5550,7 @@ function ProjectKnowledgeRegistry({
               aria-label="项目知识记录状态"
               onChange={onStateFilterChange}
               options={[
+                { value: 'active', label: '当前有效' },
                 { value: 'trial', label: '试用中' },
                 { value: 'proven', label: '已验证' },
                 { value: 'enforced', label: '强制执行' },
@@ -5423,7 +5625,12 @@ function ProjectKnowledgeRegistry({
         )}
       </section>
 
-      <ProjectKnowledgeInspector record={selectedRecord} readOnly={readOnly} onInvoke={onInvoke} />
+      <ProjectKnowledgeInspector
+        record={selectedRecord}
+        indexedSourcePaths={indexedSourcePaths}
+        readOnly={readOnly}
+        onInvoke={onInvoke}
+      />
     </div>
   );
 }
@@ -5468,7 +5675,12 @@ function ContextApplicationHistory({ applications = [], recordId }) {
   );
 }
 
-function ProjectKnowledgeInspector({ record, readOnly = false, onInvoke }) {
+function ProjectKnowledgeInspector({
+  record,
+  indexedSourcePaths = new Set(),
+  readOnly = false,
+  onInvoke,
+}) {
   if (!record) {
     return (
       <aside className="dashboard-knowledge-inspector is-empty" aria-label="记录详情">
@@ -5478,7 +5690,19 @@ function ProjectKnowledgeInspector({ record, readOnly = false, onInvoke }) {
   }
 
   const sources = projectKnowledgeRecordSources(record);
+  const references = [
+    ...(record.conclusions ?? []).flatMap((conclusion) =>
+      (conclusion.sources ?? []).map((source) => ({ ...source, role: '结论' })),
+    ),
+    ...(record.relations ?? []).flatMap((relation) =>
+      (relation.sources ?? []).map((source) => ({
+        ...source,
+        role: `关系：${relation.type} → ${relation.targetId}`,
+      })),
+    ),
+  ];
   const verification = projectKnowledgeVerificationLines(record);
+  const sourceVersions = Array.isArray(record.sourceVersions) ? record.sourceVersions : [];
   const applicablePaths = record.applicablePaths ?? [];
   const operations = record.operations ?? [];
   const needsEvidence =
@@ -5509,7 +5733,7 @@ function ProjectKnowledgeInspector({ record, readOnly = false, onInvoke }) {
         </div>
       )}
       <section>
-        <h4>最近一次应用</h4>
+        <h4>最近一次提供与反馈</h4>
         <dl>
           <div>
             <dt>为什么匹配</dt>
@@ -5522,13 +5746,32 @@ function ProjectKnowledgeInspector({ record, readOnly = false, onInvoke }) {
           {record.lastApplication && (
             <>
               <div>
-                <dt>最近应用</dt>
+                <dt>提供时间</dt>
                 <dd>{formatTimestamp(record.lastApplication.appliedAt)}</dd>
               </div>
               <div>
                 <dt>应用结果</dt>
                 <dd>{contextOutcomeLabel(record.lastApplication.outcome)}</dd>
               </div>
+              <div>
+                <dt>采用依据</dt>
+                <dd>
+                  {record.lastApplication.outcomeEvents?.at(-1)?.evidence?.decision ??
+                    '尚未记录具体采用决定'}
+                </dd>
+              </div>
+              {record.lastApplication.outcomeEvents?.at(-1)?.evidence?.verification && (
+                <div>
+                  <dt>宿主验证结果</dt>
+                  <dd>
+                    {record.lastApplication.outcomeEvents.at(-1).evidence.verification.command}
+                    {' · '}
+                    {record.lastApplication.outcomeEvents.at(-1).evidence.verification.success
+                      ? '通过'
+                      : '失败'}
+                  </dd>
+                </div>
+              )}
             </>
           )}
           {projectPolicyActivationLabel(record.activation) && (
@@ -5565,15 +5808,50 @@ function ProjectKnowledgeInspector({ record, readOnly = false, onInvoke }) {
         recordId={record.id}
       />
       <section>
-        <h4>来源与证据</h4>
+        <h4>结论证据</h4>
         {sources.length === 0 ? (
           <p className="dashboard-knowledge-inspector-muted">尚未关联来源文件</p>
         ) : (
           <ul className="dashboard-knowledge-source-list">
-            {sources.map((source) => (
-              <li key={source}>
+            {references.map((reference, index) => (
+              <li key={`${reference.source}-${index}`}>
                 <FileTextOutlined aria-hidden="true" />
-                <code>{source}</code>
+                <span>
+                  <code>
+                    {reference.source}
+                    {reference.anchor ? `#${reference.anchor}` : ''}
+                    {reference.lineStart
+                      ? `#L${reference.lineStart}${reference.lineEnd ? `-L${reference.lineEnd}` : ''}`
+                      : ''}
+                  </code>
+                  <small>
+                    {reference.role} ·{' '}
+                    {indexedSourcePaths.has(projectKnowledgeSourcePath(reference.source))
+                      ? '同时参与文档检索'
+                      : '仅支持此结论，不参与全文检索'}
+                  </small>
+                  {reference.evidence && <em>{reference.evidence}</em>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section>
+        <h4>来源版本</h4>
+        {sourceVersions.length === 0 ? (
+          <p className="dashboard-knowledge-inspector-muted">尚未记录来源版本</p>
+        ) : (
+          <ul className="dashboard-knowledge-verification-list">
+            {sourceVersions.map((version) => (
+              <li key={version.source}>
+                <FileTextOutlined aria-hidden="true" />
+                <code>{version.source}</code>
+                <span>
+                  {formatFileSize(version.size) ?? '未知大小'} ·{' '}
+                  {formatTimestamp(new Date(version.modifiedAt).toISOString())} · 内容摘要{' '}
+                  {version.digest?.slice(0, 12) ?? '旧记录未保存'}
+                </span>
               </li>
             ))}
           </ul>
@@ -5679,21 +5957,21 @@ function ProjectKnowledgeSources({
   return (
     <section
       className="dashboard-knowledge-single-view dashboard-knowledge-source-view"
-      aria-label="数据来源"
+      aria-label="检索语料"
     >
       <div className="dashboard-knowledge-source-toolbar">
         <Input
           value={searchText}
           prefix={<SearchOutlined />}
           allowClear
-          placeholder="搜索来源路径、类型或关联知识…"
-          aria-label="搜索项目知识来源"
+          placeholder="搜索语料路径、类型或关联知识…"
+          aria-label="搜索项目知识检索语料"
           onChange={(event) => onSearchTextChange(event.target.value)}
         />
         <div className="dashboard-knowledge-source-toolbar-meta">
           <span>{provider}</span>
           <span>
-            共 {totalSourceCount} 个来源
+            共 {totalSourceCount} 个语料文件
             {searchText.trim() ? ` · 匹配 ${sourceEntries.length} 个` : ''}
           </span>
         </div>
@@ -5702,23 +5980,23 @@ function ProjectKnowledgeSources({
         <Empty
           className="dashboard-knowledge-empty"
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="尚未发现项目知识来源"
+          description="尚未发现可召回的 Markdown 语料"
         />
       ) : (
         <div
           className="dashboard-knowledge-source-rows"
-          aria-label="项目知识数据来源列表"
+          aria-label="项目知识检索语料列表"
           role="region"
           tabIndex={0}
         >
           <div className="dashboard-knowledge-source-head" aria-hidden="true">
-            <span>来源路径</span>
-            <span>关联记录</span>
-            <span>收录状态</span>
-            <span>最近更新</span>
+            <span>语料路径</span>
+            <span>来源类型</span>
+            <span>当前知识</span>
+            <span>索引状态</span>
+            <span>索引时间</span>
           </div>
           {sourceEntries.map((entry) => {
-            const needsReview = entry.records.some((record) => record.state === 'trial');
             return (
               <button
                 key={entry.source}
@@ -5731,12 +6009,11 @@ function ProjectKnowledgeSources({
                   <FileTextOutlined aria-hidden="true" />
                   <code>{entry.source}</code>
                 </span>
+                <span>{projectKnowledgeCorpusKindLabel(entry.kind)}</span>
                 <strong>{entry.records.length} 条</strong>
-                <span
-                  className={`dashboard-knowledge-record-state ${needsReview ? 'is-trial' : 'is-proven'}`}
-                >
+                <span className="dashboard-knowledge-record-state is-proven">
                   <span aria-hidden="true" />
-                  {needsReview ? '试用中' : '已收录'}
+                  已索引
                 </span>
                 <time dateTime={entry.latestUpdatedAt}>
                   {formatTimestamp(entry.latestUpdatedAt)}
@@ -5766,7 +6043,27 @@ function ProjectKnowledgeQuery({
   queryPending,
   onPreviewQuery,
   retrieval,
+  queryTruncated,
+  queryLatency,
+  queryCandidateCount,
 }) {
+  const [selectedResult, setSelectedResult] = useState(null);
+  const [resultPreview, setResultPreview] = useState({ status: 'idle' });
+  useEffect(() => {
+    if (!selectedResult) return undefined;
+    let cancelled = false;
+    setResultPreview({ status: 'loading' });
+    void renderMarkdown(selectedResult.content ?? '')
+      .then((html) => {
+        if (!cancelled) setResultPreview({ status: 'success', html });
+      })
+      .catch(() => {
+        if (!cancelled) setResultPreview({ status: 'error' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedResult]);
   return (
     <section className="dashboard-knowledge-query-view" aria-label="检索测试">
       <div className="dashboard-knowledge-query-form">
@@ -5798,6 +6095,13 @@ function ProjectKnowledgeQuery({
         </div>
       </div>
       {retrieval && <p className="dashboard-knowledge-query-note">{retrieval}</p>}
+      {queryCompleted && (
+        <p className="dashboard-knowledge-query-note">
+          {typeof queryLatency === 'number' ? `本次查询 ${queryLatency} ms` : '本次查询已完成'}
+          {typeof queryCandidateCount === 'number' ? ` · ${queryCandidateCount} 个候选` : ''}
+          {queryTruncated ? ' · 结果已截断' : ''}
+        </p>
+      )}
       <div className="dashboard-knowledge-query-results" aria-label="项目知识查询结果">
         {queryResults.length === 0 ? (
           <Empty
@@ -5816,12 +6120,45 @@ function ProjectKnowledgeQuery({
               <header>
                 <strong>{result.title ?? '项目知识结果'}</strong>
                 <code>{result.source}</code>
+                <Button
+                  type="link"
+                  aria-label={`查看检索结果：${result.title ?? '项目知识结果'}`}
+                  onClick={() => setSelectedResult(result)}
+                >
+                  查看详情
+                </Button>
               </header>
               <p>{result.content}</p>
             </article>
           ))
         )}
       </div>
+      <ProjectKnowledgePreviewModal
+        open={selectedResult !== null}
+        title="检索结果详情"
+        subtitle={selectedResult?.title}
+        description="查看本次检索返回的内容片段"
+        ariaLabel="检索结果详情"
+        onClose={() => setSelectedResult(null)}
+      >
+        {() => (
+          <div className="dashboard-knowledge-preview-content">
+            <div className="dashboard-knowledge-preview-scroll">
+              <code>{selectedResult?.source}</code>
+              {resultPreview.status === 'success' ? (
+                <article
+                  className="md-github"
+                  dangerouslySetInnerHTML={{ __html: resultPreview.html }}
+                />
+              ) : resultPreview.status === 'error' ? (
+                <p>内容预览失败，请关闭后重试。</p>
+              ) : (
+                <Skeleton active />
+              )}
+            </div>
+          </div>
+        )}
+      </ProjectKnowledgePreviewModal>
     </section>
   );
 }
@@ -6029,7 +6366,7 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
   const sourceContentCacheRef = useRef(new Map());
   const [queryText, setQueryText] = useState('');
   const [queryPending, setQueryPending] = useState(false);
-  const [stateFilter, setStateFilter] = useState('proven');
+  const [stateFilter, setStateFilter] = useState('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortOrder, setSortOrder] = useState('newest');
   const [selectedRecordId, setSelectedRecordId] = useState(null);
@@ -6055,13 +6392,15 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
         ? records.filter((record) => PROJECT_MODEL_TYPES.has(record.type))
         : workspaceTab === 'policy'
           ? records.filter((record) => !PROJECT_MODEL_TYPES.has(record.type))
-          : records,
+          : workspaceTab === 'history'
+            ? records.filter((record) => record.state === 'superseded')
+            : records,
     [records, workspaceTab],
   );
   const visibleRecords = useMemo(() => {
     const search = recordSearchText.trim().toLocaleLowerCase('zh-CN');
     const filtered = workspaceRecords.filter((record) => {
-      if (stateFilter !== 'all' && record.state !== stateFilter) return false;
+      if (!projectKnowledgeStateMatches(record, stateFilter)) return false;
       if (categoryFilter !== 'all' && record.type !== categoryFilter) return false;
       if (!search) return true;
       const searchable = [
@@ -6084,41 +6423,34 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
   }, [categoryFilter, recordSearchText, sortOrder, stateFilter, workspaceRecords]);
   const selectedRecord =
     visibleRecords.find((record) => record.id === selectedRecordId) ?? visibleRecords[0] ?? null;
+  const indexedSourcePaths = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(snapshot.local?.sources) ? snapshot.local.sources : []).map((source) =>
+          projectKnowledgeSourcePath(source.source),
+        ),
+      ),
+    [snapshot.local?.sources],
+  );
   const sourceEntries = useMemo(() => {
     const sourceMap = new Map();
-    for (const record of records) {
-      for (const sourceReference of projectKnowledgeRecordSources(record)) {
-        const source = projectKnowledgeSourcePath(sourceReference);
-        const current = sourceMap.get(source) ?? {
-          source,
-          records: [],
-          latestUpdatedAt: null,
-        };
-        if (!current.records.some((entry) => entry.id === record.id)) current.records.push(record);
-        if (
-          !current.latestUpdatedAt ||
-          new Date(record.updatedAt ?? 0).getTime() >
-            new Date(current.latestUpdatedAt ?? 0).getTime()
-        ) {
-          current.latestUpdatedAt = record.updatedAt;
-        }
-        sourceMap.set(source, current);
-      }
-    }
     for (const source of Array.isArray(snapshot.local?.sources) ? snapshot.local.sources : []) {
       const sourcePath = projectKnowledgeSourcePath(source.source);
-      const current = sourceMap.get(sourcePath) ?? {
+      sourceMap.set(sourcePath, {
         source: sourcePath,
         records: [],
-        latestUpdatedAt: null,
-      };
-      if (
-        !current.latestUpdatedAt ||
-        new Date(source.updatedAt ?? 0).getTime() > new Date(current.latestUpdatedAt ?? 0).getTime()
-      ) {
-        current.latestUpdatedAt = source.updatedAt;
+        latestUpdatedAt: source.updatedAt,
+        indexed: true,
+        kind: source.kind,
+      });
+    }
+    for (const record of records.filter((record) => record.state !== 'superseded')) {
+      for (const sourceReference of projectKnowledgeRecordSources(record)) {
+        const sourcePath = projectKnowledgeSourcePath(sourceReference);
+        const current = sourceMap.get(sourcePath);
+        if (!current) continue;
+        if (!current.records.some((entry) => entry.id === record.id)) current.records.push(record);
       }
-      sourceMap.set(sourcePath, { ...current, kind: source.kind });
     }
     return Array.from(sourceMap.values()).toSorted((left, right) =>
       left.source.localeCompare(right.source, 'zh-CN'),
@@ -6146,8 +6478,10 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
   }, [selectedRecord, selectedRecordId]);
   useEffect(() => {
     setCategoryFilter('all');
-    setSelectedRecordId(null);
-  }, [workspaceTab]);
+    setSelectedRecordId((currentId) =>
+      currentId && workspaceRecords.some((record) => record.id === currentId) ? currentId : null,
+    );
+  }, [workspaceRecords, workspaceTab]);
   const queryPreview = isDashboardRecord(snapshot.queryPreview) ? snapshot.queryPreview : null;
   const queryCompleted =
     !queryPending && queryPreview?.kind === 'search' && queryPreview.task === queryText.trim();
@@ -6199,6 +6533,7 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
   const selectSourceRecord = (record) => {
     closeSource();
     setWorkspaceTab(PROJECT_MODEL_TYPES.has(record.type) ? 'model' : 'policy');
+    setStateFilter(record.state === 'superseded' ? 'superseded' : 'active');
     setSelectedRecordId(record.id);
   };
   const provider =
@@ -6218,16 +6553,37 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
       ? snapshot.diagnostics
       : (page.diagnostics ?? []);
   const disabled = page.status === 'disabled';
-  const serviceHealthy = !disabled && configured !== '需要检查';
+  const serviceHealthy =
+    !disabled &&
+    configured !== '需要检查' &&
+    snapshot.status?.healthy !== false &&
+    snapshot.local?.available !== false &&
+    diagnostics.length === 0;
+  const knowledgeCounts = snapshot.counts ?? {
+    active: records.filter((record) => record.state !== 'superseded').length,
+    trial: records.filter((record) => record.state === 'trial').length,
+    proven: records.filter((record) => record.state === 'proven').length,
+    enforced: records.filter((record) => record.state === 'enforced').length,
+    superseded: records.filter((record) => record.state === 'superseded').length,
+  };
   const activeKnowledgeGroup =
     PROJECT_KNOWLEDGE_CATEGORY_GROUPS.find((group) => group.key === workspaceTab) ??
     PROJECT_KNOWLEDGE_CATEGORY_GROUPS[0];
   const activeKnowledgeHelp =
-    categoryFilter === 'all' ? activeKnowledgeGroup : projectKnowledgeTypeMeta(categoryFilter);
+    workspaceTab === 'history'
+      ? {
+          description: '已经替代、失效或被纠正的项目知识，只用于回顾。',
+          example: '查看旧版本为何停止提供，以及它被哪条知识替代。',
+        }
+      : categoryFilter === 'all'
+        ? activeKnowledgeGroup
+        : projectKnowledgeTypeMeta(categoryFilter);
   const activeKnowledgeLabel =
-    categoryFilter === 'all'
-      ? activeKnowledgeGroup.label
-      : projectKnowledgeTypeLabel(categoryFilter);
+    workspaceTab === 'history'
+      ? '历史版本'
+      : categoryFilter === 'all'
+        ? activeKnowledgeGroup.label
+        : projectKnowledgeTypeLabel(categoryFilter);
 
   return (
     <div className="dashboard-tool-page dashboard-tool-page-knowledge min-w-0">
@@ -6237,7 +6593,7 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
             className={`dashboard-knowledge-service-state ${serviceHealthy ? 'is-healthy' : 'is-warning'}`}
           >
             <span className="dashboard-tool-state-dot" aria-hidden="true" />
-            {disabled ? '服务已暂停' : configured === '需要检查' ? '需要检查' : '服务正常'}
+            {disabled ? '服务已暂停' : serviceHealthy ? '服务正常' : '需要处理'}
           </span>
           <CompactHelpButton
             ariaLabel="了解项目知识分类"
@@ -6245,6 +6601,13 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
             description="项目知识帮助 Agent 理解项目并遵守已有约定"
             items={PROJECT_KNOWLEDGE_CATEGORY_GROUPS}
           />
+          <span className="dashboard-knowledge-workspace-meta">
+            当前有效 {knowledgeCounts.active} 条 · 历史 {knowledgeCounts.superseded} 条
+            {snapshot.truncated ? ' · 列表已截断' : ''}
+            {snapshot.pendingHostReviewCount > 0
+              ? ` · ${snapshot.pendingHostReviewCount} 条经验待 Agent 评审`
+              : ''}
+          </span>
         </div>
         <Button
           className="dashboard-knowledge-create-button dashboard-plugin-primary-action"
@@ -6297,7 +6660,8 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
         {[
           ['model', '项目概况'],
           ['policy', '项目规范'],
-          ['sources', '数据来源'],
+          ['history', '历史版本'],
+          ['sources', '检索语料'],
           ['query', '检索测试'],
         ].map(([key, label]) => (
           <button
@@ -6306,15 +6670,37 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
             role="tab"
             aria-selected={workspaceTab === key}
             tabIndex={workspaceTab === key ? 0 : -1}
+            onKeyDown={(event) => {
+              const tabs = [...event.currentTarget.parentElement.querySelectorAll('[role="tab"]')];
+              const index = tabs.indexOf(event.currentTarget);
+              const target =
+                event.key === 'ArrowRight'
+                  ? (index + 1) % tabs.length
+                  : event.key === 'ArrowLeft'
+                    ? (index + tabs.length - 1) % tabs.length
+                    : event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? tabs.length - 1
+                        : -1;
+              if (target < 0) return;
+              event.preventDefault();
+              tabs[target].focus();
+              tabs[target].click();
+            }}
             className={workspaceTab === key ? 'is-active' : ''}
-            onClick={() => setWorkspaceTab(key)}
+            onClick={() => {
+              setWorkspaceTab(key);
+              setStateFilter(key === 'history' ? 'superseded' : 'active');
+            }}
           >
             {label}
           </button>
         ))}
       </nav>
-      {workspaceTab === 'model' || workspaceTab === 'policy' ? (
+      {workspaceTab === 'model' || workspaceTab === 'policy' || workspaceTab === 'history' ? (
         <ProjectKnowledgeRegistry
+          workspaceTab={workspaceTab}
           records={workspaceRecords}
           visibleRecords={visibleRecords}
           selectedRecord={selectedRecord}
@@ -6331,6 +6717,7 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
           sortOrder={sortOrder}
           onSortOrderChange={setSortOrder}
           diagnostics={diagnostics}
+          indexedSourcePaths={indexedSourcePaths}
           provider={provider}
           readOnly={readOnly}
           onInvoke={onInvoke}
@@ -6359,6 +6746,9 @@ function ProjectKnowledgeCenter({ page, data, readOnly = false, onInvoke }) {
           queryPending={queryPending}
           onPreviewQuery={previewQuery}
           retrieval={snapshot.retrieval}
+          queryTruncated={queryPreview?.truncated === true}
+          queryLatency={snapshot.local?.lastQueryMs}
+          queryCandidateCount={snapshot.local?.lastCandidateCount}
         />
       )}
       <DashboardModal
@@ -6544,9 +6934,11 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
   const [correctionText, setCorrectionText] = useState('');
   const [correctionSaving, setCorrectionSaving] = useState(false);
   const [showNewProfile, setShowNewProfile] = useState(false);
+  const [newProfileSaving, setNewProfileSaving] = useState(false);
   const [newProfileText, setNewProfileText] = useState('');
   const [newProfileCategory, setNewProfileCategory] = useState('沟通偏好');
   const [showNewProjectMemory, setShowNewProjectMemory] = useState(false);
+  const [newProjectMemorySaving, setNewProjectMemorySaving] = useState(false);
   const [newProjectMemoryText, setNewProjectMemoryText] = useState('');
   const [newProjectMemoryCategory, setNewProjectMemoryCategory] = useState('项目约定');
   const [expandedRecordIds, setExpandedRecordIds] = useState(() => new Set());
@@ -6564,7 +6956,14 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
   );
   const episodeRecords = liveRecords.filter((record) => record.memoryType === 'personal-episode');
   const historyRecords = managedRecords.filter((record) => !isActiveMemoryRecord(record));
-  const totalMemoryRecordCount = managedRecords.length;
+  const memoryCounts = status.counts ?? {
+    active: liveRecords.length,
+    trial: liveRecords.filter((record) => (record.status ?? record.state) === 'trial').length,
+    proven: liveRecords.filter((record) => (record.status ?? record.state) === 'proven').length,
+    history: historyRecords.length,
+    tombstones: managedRecords.filter((record) => record.status === 'tombstoned').length,
+  };
+  const totalMemoryRecordCount = memoryCounts.active;
   const notifications = data?.notifications ?? [];
   const projectKey = data?.projectKey;
   const memoryFileCount = status.files?.length ?? 0;
@@ -6611,6 +7010,17 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
     visibleMemoryRecords[0] ??
     null;
   const visibleMemoryKey = visibleMemoryRecords.map((record) => record.id).join('|');
+  const memoryEmptyDescription = memoryQuery.trim()
+    ? '没有匹配的个人记忆'
+    : memoryFilter === 'history'
+      ? '还没有被替代、遗忘或冲突的历史记忆'
+      : totalMemoryRecordCount === 0
+        ? memoryCounts.history > 0
+          ? `当前没有有效个人记忆；已有 ${memoryCounts.history} 条历史记录`
+          : memoryFileCount > 0
+            ? '当前没有有效个人记忆；已有记忆文件中暂无可复用的内容'
+            : '当前还没有形成可复用的个人记忆'
+        : activeMemoryFilter.description;
 
   useEffect(() => {
     if (selectedRecord?.id !== selectedMemoryId) setSelectedMemoryId(selectedRecord?.id ?? null);
@@ -6761,6 +7171,12 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
             value: `${totalMemoryRecordCount} 条记忆`,
             tone: 'success',
           },
+          {
+            label: '历史',
+            value: `${memoryCounts.history} 条`,
+            displayValue: `历史：${memoryCounts.history} 条`,
+            tone: 'neutral',
+          },
         ]}
         help={
           <CompactHelpButton
@@ -6872,7 +7288,9 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
               任务注入{status.retrievalEnabled ? '已开启' : '已暂停'}
             </div>
             <span>{profileUsage}</span>
-            <span>{memoryFileCount} 个记忆文件</span>
+            <span>
+              {memoryFileCount} 个记忆文件 · {memoryCounts.tombstones} 个遗忘保护
+            </span>
           </div>
         </aside>
         <section className="dashboard-memory-registry" aria-label="个人记忆列表">
@@ -6904,12 +7322,7 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
           </div>
           <div className="dashboard-memory-table-body">
             {visibleMemoryRecords.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  memoryQuery.trim() ? '没有匹配的个人记忆' : activeMemoryFilter.description
-                }
-              />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={memoryEmptyDescription} />
             ) : (
               memoryGroups.map((group) => (
                 <section key={group.key} className="dashboard-memory-group">
@@ -7079,17 +7492,27 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
         okText="保存"
         cancelText="取消"
         okButtonProps={{ disabled: newProfileText.trim().length === 0 }}
-        onClose={() => setShowNewProfile(false)}
-        onOk={() => {
+        confirmLoading={newProfileSaving}
+        onClose={() => {
+          if (!newProfileSaving) setShowNewProfile(false);
+        }}
+        onOk={async () => {
           if (newProfileText.trim().length === 0) return;
-          void onInvoke('remember', {
-            scope: 'global',
-            memoryClass: 'user-preference',
-            category: newProfileCategory.trim() || '沟通偏好',
-            text: newProfileText.trim(),
-          });
-          setNewProfileText('');
-          setShowNewProfile(false);
+          if (newProfileSaving) return;
+          setNewProfileSaving(true);
+          try {
+            const result = await onInvoke('remember', {
+              scope: 'global',
+              memoryClass: 'user-preference',
+              category: newProfileCategory.trim() || '沟通偏好',
+              text: newProfileText.trim(),
+            });
+            if (result === undefined) return;
+            setNewProfileText('');
+            setShowNewProfile(false);
+          } finally {
+            setNewProfileSaving(false);
+          }
         }}
       >
         <Form layout="vertical" component="div">
@@ -7137,19 +7560,29 @@ function PersonalMemoryCenter({ data, readOnly = false, onInvoke }) {
         okText="保存"
         cancelText="取消"
         okButtonProps={{ disabled: newProjectMemoryText.trim().length === 0 }}
-        onClose={() => setShowNewProjectMemory(false)}
-        onOk={() => {
+        confirmLoading={newProjectMemorySaving}
+        onClose={() => {
+          if (!newProjectMemorySaving) setShowNewProjectMemory(false);
+        }}
+        onOk={async () => {
           if (!projectKey || newProjectMemoryText.trim().length === 0) return;
-          void onInvoke('remember', {
-            scope: 'project',
-            projectKey,
-            memoryClass: 'project-convention',
-            category: newProjectMemoryCategory.trim() || '项目约定',
-            text: newProjectMemoryText.trim(),
-          });
-          setNewProjectMemoryText('');
-          setNewProjectMemoryCategory('项目约定');
-          setShowNewProjectMemory(false);
+          if (newProjectMemorySaving) return;
+          setNewProjectMemorySaving(true);
+          try {
+            const result = await onInvoke('remember', {
+              scope: 'project',
+              projectKey,
+              memoryClass: 'project-convention',
+              category: newProjectMemoryCategory.trim() || '项目约定',
+              text: newProjectMemoryText.trim(),
+            });
+            if (result === undefined) return;
+            setNewProjectMemoryText('');
+            setNewProjectMemoryCategory('项目约定');
+            setShowNewProjectMemory(false);
+          } finally {
+            setNewProjectMemorySaving(false);
+          }
         }}
       >
         <Form layout="vertical" component="div">

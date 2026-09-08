@@ -728,7 +728,7 @@ async function checkSuperpowers(
   return {
     check: 'Superpowers',
     status: 'warn',
-    message: 'not detected — install with: npx skills add obra/superpowers -y --agent <platform>',
+    message: 'not detected — install with: npm install superpowers-zh or run comet init',
   };
 }
 
@@ -813,7 +813,11 @@ async function checkPlatformComponents(
             ? `complete (${present} files)`
             : `partial (${present}/${ruleDestinations.length} files) — run: comet update --scope ${scope}`,
     });
-    const legacyRuleDestinations = getLegacyPlatformRuleDestinations(baseDir, platform, scope);
+    const legacyRuleDestinations = await getLegacyPlatformRuleDestinations(
+      baseDir,
+      platform,
+      scope,
+    );
     let legacyRules = 0;
     const legacyInspectionErrors: string[] = [];
     for (const destination of legacyRuleDestinations) {

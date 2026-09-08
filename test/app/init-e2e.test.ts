@@ -6,6 +6,7 @@ import os from 'os';
 import path from 'path';
 import { parse } from 'yaml';
 import { getProjectRegistryPath } from '../../platform/install/project-registry.js';
+import { defaultProjectConfig } from '../../domains/comet-native/native-config.js';
 import { stageOpenSpecSkills, unquoteWindowsArg } from '../helpers/openspec-test-utils.js';
 
 vi.mock('child_process', () => ({
@@ -86,6 +87,16 @@ function mockExternalSuccess(options: { openSpecConfig?: 'healthy' | 'missing' |
   mockedExecFileSync.mockImplementation((command: unknown, args?: unknown, opts?: unknown) => {
     const cmd = String(command);
     const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
+
+    if (cmd === 'iam' && cmdArgs[0] === '--help') {
+      return Buffer.from('IAM CLI\nAvailable Commands:\n  auth Authenticate with IAM\n');
+    }
+    if (cmd === 'dop' && cmdArgs[0] === '--help') {
+      return Buffer.from('DOP CLI\nAvailable Commands:\n  change Manage system changes\n');
+    }
+    if (cmd === 'gh' && cmdArgs[0] === '--version') {
+      return Buffer.from('gh version gitee-cli 1.0.6\n');
+    }
 
     if (
       (cmd === 'npx' || cmd === 'npx.cmd') &&
@@ -176,6 +187,7 @@ describe('comet init E2E', () => {
     vi.resetAllMocks();
     vi.resetModules();
     vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmpDir, 'fake-home'));
+    mockExternalSuccess();
   });
 
   afterEach(async () => {
@@ -1716,6 +1728,42 @@ describe('comet init E2E', () => {
     expect(globalConfig.native.snapshot).toBeUndefined();
   });
 
+  it('migrates a project-schema Home config during global initialization', async () => {
+    mockExternalSuccess();
+    const projectConfig = defaultProjectConfig('artifacts', 'zh-CN');
+    await fs.mkdir(path.join(os.homedir(), '.comet'), { recursive: true });
+    await fs.writeFile(
+      path.join(os.homedir(), '.comet', 'config.yaml'),
+      JSON.stringify({ ...projectConfig, schema: 'comet.project.v1', ambient_resume: false }),
+      'utf8',
+    );
+
+    const { initCommand } = await import('../../app/commands/init.js');
+    const result = await captureJsonOutput(() =>
+      initCommand(tmpDir, {
+        yes: true,
+        json: true,
+        scope: 'global',
+        workflow: 'native',
+        codegraph: 'skip',
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'complete', scope: 'global' });
+    const globalConfig = parse(
+      await fs.readFile(path.join(os.homedir(), '.comet', 'config.yaml'), 'utf8'),
+    ) as {
+      schema: string;
+      ambient_resume: boolean;
+      native: { artifact_root: string; language: string };
+    };
+    expect(globalConfig).toMatchObject({
+      schema: 'comet.global.v1',
+      ambient_resume: false,
+      native: { artifact_root: 'artifacts', language: 'zh-CN' },
+    });
+  });
+
   it('does not publish a global Classic default when OpenSpec initialization fails', async () => {
     mockExternalSuccess();
     await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
@@ -2614,7 +2662,7 @@ describe('comet init E2E', () => {
           '.claude',
           '.cursor',
           '.opencode',
-          '.windsurf',
+          '.devin',
           '.cline',
           '.roo',
           '.continue',
@@ -3036,6 +3084,16 @@ describe('comet init E2E', () => {
       mockedExecFileSync.mockImplementation((command: unknown, args?: unknown) => {
         const cmd = String(command);
         const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
+
+        if (cmd === 'iam' && cmdArgs[0] === '--help') {
+          return Buffer.from('IAM CLI auth\n');
+        }
+        if (cmd === 'dop' && cmdArgs[0] === '--help') {
+          return Buffer.from('DOP CLI change\n');
+        }
+        if (cmd === 'gh' && cmdArgs[0] === '--version') {
+          return Buffer.from('gh version gitee-cli 1.0.6\n');
+        }
 
         if ((cmd === 'which' || cmd === 'where') && cmdArgs[0] === 'openspec') {
           return Buffer.from('/usr/bin/openspec');

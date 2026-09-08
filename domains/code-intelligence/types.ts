@@ -5,30 +5,15 @@ export type CodebaseMemoryAction = 'install' | 'init' | 'skip' | 'auto';
 export type CodebaseMemoryStepStatus = 'installed' | 'skipped' | 'failed';
 
 export type CodebaseMemoryCliStatus =
-  | 'installed'
-  | 'missing'
-  | 'incompatible'
-  | 'unknown'
-  | 'skipped';
+  'installed' | 'missing' | 'incompatible' | 'unknown' | 'skipped';
 
 export type CodebaseMemoryIndexStatus =
-  | 'not_applicable'
-  | 'missing'
-  | 'indexing'
-  | 'ready'
-  | 'stale'
-  | 'failed'
-  | 'unknown'
-  | 'skipped';
+  'not_applicable' | 'missing' | 'indexing' | 'ready' | 'stale' | 'failed' | 'unknown' | 'skipped';
 
 export type CodebaseMemoryFreshness = 'current' | 'stale' | 'unknown' | 'not_applicable';
 
 export type CodebaseMemoryAgentStatus =
-  | 'registered'
-  | 'missing'
-  | 'conflict'
-  | 'invalid'
-  | 'unsupported';
+  'registered' | 'missing' | 'conflict' | 'invalid' | 'unsupported';
 
 export interface CodebaseMemoryAgentDiagnostic {
   platform: string;

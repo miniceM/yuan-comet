@@ -65,7 +65,7 @@ import {
 import { writeWorkflowProjectConfig } from '../../domains/workflow-contract/project-config-writer.js';
 import { ensureCometProjectGitignore } from '../../domains/workflow-contract/project-gitignore.js';
 import {
-  readWorkflowGlobalConfig,
+  readWorkflowGlobalConfigForLifecycle,
   writeWorkflowGlobalConfig,
 } from '../../domains/workflow-contract/global-config.js';
 import type {
@@ -85,6 +85,10 @@ import {
   setupCodebaseMemory,
   type CodebaseMemoryAction,
 } from '../../domains/code-intelligence/index.js';
+import {
+  ensureEnterpriseCli,
+  type EnterpriseCliResult,
+} from '../../domains/enterprise-cli/index.js';
 import { printVersionInfo } from '../../platform/version/version.js';
 import { printCometBanner } from '../cli/comet-banner.js';
 import { t, type TranslationKey } from './i18n.js';
@@ -735,6 +739,50 @@ export async function initCommand(
     }
 
     plans.push({ platform, native, osAction, spAction, cmAction, hasOS, hasSP, hasCM });
+  }
+
+  // Enterprise CLI dependencies must be ready before any platform assets or
+  // workflow configuration are written. A single init checks the shared
+  // environment once, even when several platforms are selected.
+  const enterpriseCli: EnterpriseCliResult = await ensureEnterpriseCli();
+  if (enterpriseCli.status === 'incomplete') {
+    const reason = enterpriseCli.failures
+      .map(
+        (failure) =>
+          `${failure.command}: ${failure.reasonCode}${failure.detail ? ` (${failure.detail})` : ''}`,
+      )
+      .join('; ');
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          {
+            projectPath,
+            scope,
+            language: language.id,
+            workflow,
+            initializedWorkflows:
+              workflowSelection === 'both' ? ['native', 'classic'] : [workflowSelection],
+            workflowSource,
+            status: 'incomplete',
+            enterpriseCli,
+            failures: [
+              {
+                component: 'Enterprise CLI',
+                reason: reason || 'Enterprise CLI prerequisites are unavailable',
+              },
+            ],
+            results: [],
+            workingDirsCreated: false,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      log(`\n  Enterprise CLI prerequisites are incomplete: ${reason}`);
+      for (const action of enterpriseCli.nextActions) log(`  ${action}`);
+    }
+    return { status: 'incomplete' };
   }
 
   if (includesWorkflow(workflowSelection, 'native') && scope === 'project') {
@@ -1405,7 +1453,7 @@ export async function initCommand(
         options.artifactRoot ?? 'docs',
         language.artifactLanguage,
       );
-      const existingGlobalConfig = await readWorkflowGlobalConfig(baseDir);
+      const existingGlobalConfig = await readWorkflowGlobalConfigForLifecycle(baseDir);
       const selectedWorkflows =
         workflowSelection === 'both' ? (['native', 'classic'] as const) : [workflowSelection];
       const config: WorkflowGlobalConfig = {
@@ -1470,6 +1518,8 @@ export async function initCommand(
           nativeArtifactRoot,
           classicArtifactLayout: workflowDecision?.classicArtifactLayout ?? null,
           selectedPlatforms: selectedPlatformIds,
+          enterpriseCli,
+          nextActions: enterpriseCli.nextActions,
           codegraph,
           codebaseMemory,
           results: results.map((result) => ({
@@ -1498,6 +1548,10 @@ export async function initCommand(
     nativeArtifactRoot,
     workflowDecision?.classicArtifactLayout ?? null,
   );
+  if (completionStatus === 'complete' && enterpriseCli.nextActions.length > 0) {
+    console.log(lang === 'zh' ? '  IAM 登录提示：' : '  IAM login reminder:');
+    for (const action of enterpriseCli.nextActions) console.log(`    ${action}`);
+  }
   return { status: completionStatus };
 }
 

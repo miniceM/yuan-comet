@@ -4,8 +4,11 @@ import {
   applyNativeVerifierEnvelope,
   confirmNativeSkillCoordinatedPass,
   confirmNativePortableAcceptance,
+  prepareNativePortableShapeConfirmation,
+  recordNativeVerifierUnavailable,
   recordNativeVerifierExecutionError,
   reserveNativeVerifierAttempt,
+  resolveNativeVerifierBlocker,
   returnNativeCandidateToBuild,
   retryNativeVerifier,
   submitNativeBuilderCandidate,
@@ -35,18 +38,28 @@ const checks: NativePortableCheckSummary[] = [
   },
 ];
 
+function confirmAcceptance(
+  state: NativePortableState,
+  acceptance: Array<{ id: string; source: string; text: string }>,
+): NativePortableState {
+  return confirmNativePortableAcceptance({
+    state: prepareNativePortableShapeConfirmation({ state, acceptance }),
+    acceptance,
+  });
+}
+
 function buildState(identityProvider = 'test-host'): {
   state: NativePortableState;
   runner: ReturnType<typeof createNativeRunnerChannel>;
 } {
   const runner = createNativeRunnerChannel();
-  let state = confirmNativePortableAcceptance({
-    state: createNativePortableState({ name: 'loop-change', language: 'en' }),
-    acceptance: [
+  let state = confirmAcceptance(
+    createNativePortableState({ name: 'loop-change', language: 'en' }),
+    [
       { id: 'A1', source: 'brief.md', text: 'First behavior works.' },
       { id: 'A2', source: 'brief.md', text: 'Second behavior works.' },
     ],
-  });
+  );
   state = submitNativeBuilderCandidate({
     state,
     input: {
@@ -130,10 +143,10 @@ function resubmitRepair(
 describe('Native portable Build/Verify loop', () => {
   it('requires a passed read-only review from a different execution before Verify', () => {
     const runner = createNativeRunnerChannel();
-    const state = confirmNativePortableAcceptance({
-      state: createNativePortableState({ name: 'reviewed-change', language: 'en' }),
-      acceptance: [{ id: 'A1', source: 'brief.md', text: 'Reviewed behavior works.' }],
-    });
+    const state = confirmAcceptance(
+      createNativePortableState({ name: 'reviewed-change', language: 'en' }),
+      [{ id: 'A1', source: 'brief.md', text: 'Reviewed behavior works.' }],
+    );
     const identity = runner.captureExecutionIdentity({
       identityProvider: 'test-host',
       executionRef: 'builder-review-gate',
@@ -239,10 +252,10 @@ describe('Native portable Build/Verify loop', () => {
   });
 
   it('requires a reviewed parent handoff when every child is done', () => {
-    const state = confirmNativePortableAcceptance({
-      state: createNativePortableState({ name: 'parent-change', language: 'en' }),
-      acceptance: [{ id: 'A1', source: 'brief.md', text: 'Parent behavior works.' }],
-    });
+    const state = confirmAcceptance(
+      createNativePortableState({ name: 'parent-change', language: 'en' }),
+      [{ id: 'A1', source: 'brief.md', text: 'Parent behavior works.' }],
+    );
     const continuation = nativePortableContinuation(state, {
       contractHash: 'contract',
       confirmed: true,
@@ -303,8 +316,9 @@ describe('Native portable Build/Verify loop', () => {
 
     expect(continuation).toMatchObject({
       disposition: 'await-user',
-      action: 'confirm-shape',
-      requiredInputs: ['summary', 'coordination-choice', 'shared-understanding-confirmation'],
+      requiresUserDecision: true,
+      action: 'prepare-shape-confirmation',
+      requiredInputs: ['summary', 'coordination-choice'],
       commandArgs: expect.arrayContaining(['--coordination-mode', '<coordination-mode>']),
       inputOptions: [
         expect.objectContaining({ name: 'summary', flag: '--summary' }),
@@ -314,7 +328,6 @@ describe('Native portable Build/Verify loop', () => {
           valueKind: 'choice',
           choices: ['multi-session', 'single-session'],
         }),
-        expect.objectContaining({ name: 'confirmed', flag: '--confirmed' }),
       ],
       userCommunication: {
         required: true,
@@ -328,14 +341,38 @@ describe('Native portable Build/Verify loop', () => {
     );
     expect(resumed).toMatchObject({
       disposition: 'continue',
-      action: 'confirm-shape',
-      requiredInputs: ['summary', 'shared-understanding-confirmation'],
+      requiresUserDecision: false,
+      action: 'prepare-shape-confirmation',
+      requiredInputs: ['summary'],
       userCommunication: { required: false },
     });
     expect(resumed.commandArgs).not.toContain('--coordination-mode');
     expect(resumed.inputOptions).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: 'coordination-mode' })]),
     );
+    expect(resumed.commandArgs).not.toContain('--confirmed');
+
+    const awaitingConfirmation = prepareNativePortableShapeConfirmation({
+      state,
+      acceptance: [{ id: 'A1', source: 'brief.md', text: 'The Shape is ready.' }],
+    });
+    const confirmation = nativePortableContinuation(awaitingConfirmation);
+    expect(confirmation).toMatchObject({
+      disposition: 'await-user',
+      requiresUserDecision: true,
+      action: 'confirm-shape',
+      commandArgs: null,
+      requiredInputs: ['summary', 'shared-understanding-confirmation'],
+      userCommunication: { required: true, suggestedReply: 'Confirm and enter Build' },
+      commandAlternatives: [
+        expect.objectContaining({
+          name: 'confirm-shape',
+          stateVersion: 2,
+          expectedAction: 'confirm-shape',
+          commandArgs: expect.arrayContaining(['--confirmed']),
+        }),
+      ],
+    });
   });
 
   it('requires user confirmation before a package-local pass becomes archive-ready', () => {
@@ -423,6 +460,117 @@ describe('Native portable Build/Verify loop', () => {
       loop: { ...archiveReady.loop, stage: 'done' as const },
     };
     expect(nativePortableContinuation(archived).commandAlternatives).toBeUndefined();
+  });
+
+  it('requires an explicit workspace finish choice before an isolated Archive preview', () => {
+    const { state, runner } = buildState();
+    const archiveReady = confirmNativeSkillCoordinatedPass(
+      applyNativeVerifierEnvelope({
+        state,
+        envelope: envelope(runner, state, 'pass'),
+        checks,
+        maxVerifyFailures: 5,
+      }).state,
+    );
+    const isolated = {
+      ...archiveReady,
+      workspace: {
+        isolation: 'worktree' as const,
+        change_branch: 'comet/change',
+        target_branch: 'main',
+        finish: null,
+      },
+    };
+
+    const continuation = nativePortableContinuation(isolated);
+
+    expect(continuation).toMatchObject({
+      disposition: 'await-user',
+      action: 'archive',
+      commandArgs: null,
+      requiredInputs: ['workspace-finish'],
+      inputOptions: [
+        expect.objectContaining({
+          name: 'finish',
+          flag: '--finish',
+          choices: ['keep', 'merge', 'push', 'pull-request'],
+        }),
+      ],
+      userCommunication: {
+        required: true,
+        suggestedReply: 'Reply A, B, C, D, or E',
+      },
+    });
+    expect(continuation.commandAlternatives).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'keep-workspace',
+          expectedAction: 'archive-preview',
+          commandArgs: [
+            'comet',
+            'native',
+            'archive',
+            'loop-change',
+            '--dry-run',
+            '--finish',
+            'keep',
+          ],
+          description: expect.stringContaining('Keep the current branch'),
+        }),
+        expect.objectContaining({
+          name: 'push-pull-request',
+          commandArgs: expect.arrayContaining(['--dry-run', '--finish', 'pull-request']),
+          description: expect.stringContaining('create a PR'),
+        }),
+        expect.objectContaining({
+          name: 'defer-archive',
+          commandArgs: null,
+          description: expect.stringContaining('Keep the current change'),
+        }),
+      ]),
+    );
+  });
+
+  it('returns confirmed Archive only from a successful preview continuation', () => {
+    const { state, runner } = buildState();
+    const archiveReady = confirmNativeSkillCoordinatedPass(
+      applyNativeVerifierEnvelope({
+        state,
+        envelope: envelope(runner, state, 'pass'),
+        checks,
+        maxVerifyFailures: 5,
+      }).state,
+    );
+    const isolated = {
+      ...archiveReady,
+      workspace: {
+        isolation: 'branch' as const,
+        change_branch: 'comet/change',
+        target_branch: 'main',
+        finish: 'keep' as const,
+      },
+    };
+
+    expect(
+      nativePortableContinuation(isolated, null, {
+        archiveMode: 'preview',
+      }),
+    ).toMatchObject({
+      disposition: 'continue',
+      action: 'archive',
+      commandArgs: ['comet', 'native', 'archive', 'loop-change', '--confirmed'],
+    });
+    expect(
+      nativePortableContinuation(isolated, null, {
+        archiveMode: 'preview',
+        archiveBlockers: ['unrelated generated output'],
+      }),
+    ).toMatchObject({
+      disposition: 'blocked',
+      action: 'archive',
+      commandArgs: null,
+      requiredInputs: ['archive-blocker-resolution'],
+    });
   });
 
   it('allows an explicitly empty Runtime check plan when Verifier covers every acceptance ID', () => {
@@ -639,6 +787,12 @@ describe('Native portable Build/Verify loop', () => {
       action: 'resolve-loop-stop',
       commandArgs: null,
       requiredInputs: ['summary', 'user-decision'],
+      userCommunication: {
+        required: true,
+        message: expect.stringContaining('paused to avoid looping on the same problem'),
+        suggestedReply: 'Continue repairing',
+        agentInstruction: expect.stringContaining('revise-implementation'),
+      },
       commandAlternatives: expect.arrayContaining([
         expect.objectContaining({
           name: 'revise-implementation',
@@ -652,6 +806,65 @@ describe('Native portable Build/Verify loop', () => {
         }),
       ]),
     });
+    expect(
+      nativePortableContinuation({ ...state, language: 'zh-CN' }).userCommunication,
+    ).toMatchObject({
+      required: true,
+      message: expect.stringContaining('本次修改已暂停'),
+      suggestedReply: '继续修复',
+      agentInstruction: expect.stringContaining('revise-implementation'),
+    });
+  });
+
+  it('explains a budget-exhausted stop without calling it a no-progress loop', () => {
+    const { state, runner } = buildState();
+    const stopped = applyNativeVerifierEnvelope({
+      state,
+      envelope: envelope(runner, state, 'fail', ['A1']),
+      checks,
+      maxVerifyFailures: 1,
+    }).state;
+
+    expect(stopped).toMatchObject({
+      status: 'await-user',
+      loop: { failed_iteration_count: 1, no_progress_count: 0, stage: 'await-user' },
+    });
+    expect(nativePortableContinuation(stopped).userCommunication).toMatchObject({
+      required: true,
+      message: expect.stringContaining('used its configured failure budget'),
+      suggestedReply: 'Continue repairing',
+    });
+    expect(
+      nativePortableContinuation({ ...stopped, language: 'zh-CN' }).userCommunication,
+    ).toMatchObject({
+      required: true,
+      message: expect.stringContaining('已用完配置的预算'),
+    });
+  });
+
+  it('persists one stop reason when budget and no-progress thresholds overlap', () => {
+    const prepared = buildState();
+    const primed = {
+      ...prepared.state,
+      loop: {
+        ...prepared.state.loop,
+        failed_iteration_count: 2,
+        no_progress_count: 2,
+        previous_unresolved_ids: ['A1'],
+      },
+    };
+    const stopped = applyNativeVerifierEnvelope({
+      state: primed,
+      envelope: envelope(prepared.runner, primed, 'fail', ['A1']),
+      checks,
+      maxVerifyFailures: 3,
+    }).state;
+
+    expect((stopped.loop as { stop_reason?: string }).stop_reason).toBe('stalled');
+    expect(stopped.blockers[0]?.reason.text).toContain('did not strictly reduce');
+    expect(nativePortableContinuation(stopped).userCommunication.message).toContain(
+      'failed three times in a row',
+    );
   });
 
   it('keeps a report reference for a semantic blocker', () => {
@@ -668,6 +881,26 @@ describe('Native portable Build/Verify loop', () => {
       verification_result: 'blocked',
       verification_report: 'verification.md',
       loop: { next_action: 'resolve-verifier-blocker' },
+    });
+    expect(nativePortableContinuation(result).userCommunication).toMatchObject({
+      required: true,
+      message: expect.stringContaining('information only you can provide'),
+      suggestedReply: null,
+      agentInstruction: expect.stringContaining('resolve-verifier-blocker'),
+    });
+    expect(
+      nativePortableContinuation({ ...result, language: 'zh-CN' }).userCommunication,
+    ).toMatchObject({
+      required: true,
+      message: expect.stringContaining('缺少只有你能提供的信息'),
+    });
+
+    const resumed = resolveNativeVerifierBlocker(result, {
+      reason: 'The external service returns 429 under load; that behavior is expected.',
+    });
+    expect(resumed.history[resumed.history.length - 1]).toMatchObject({
+      outcome: 'recovery',
+      summary: { text: 'The external service returns 429 under load; that behavior is expected.' },
     });
   });
 
@@ -725,6 +958,144 @@ describe('Native portable Build/Verify loop', () => {
       execution_failure_count: 0,
       attempt: 3,
     });
+  });
+
+  it.each([
+    {
+      language: 'en' as const,
+      executionError: 'immediately submit verifier-execution-error',
+      unavailable: 'only when the current platform truly has no usable subagent capability',
+    },
+    {
+      language: 'zh-CN' as const,
+      executionError: '立即提交 verifier-execution-error',
+      unavailable: '只有当前平台确实没有可用的 subagent 能力时才提交 verifier-unavailable',
+    },
+  ])(
+    'classifies dispatched Verifier failures separately from platform unavailability in $language',
+    ({ language, executionError, unavailable }) => {
+      const { state } = buildState();
+      const communication = nativePortableContinuation({ ...state, language }).userCommunication;
+      expect(communication).toMatchObject({ required: false });
+      expect(communication.agentInstruction).toContain(executionError);
+      expect(communication.agentInstruction).toContain(unavailable);
+    },
+  );
+
+  it('retries unavailable semantic verification without degrading or reopening the full scope', () => {
+    const { state } = buildState();
+    const unavailable = recordNativeVerifierUnavailable({
+      state,
+      checks,
+      verifierExecutionRef: 'verifier-1-1',
+      summary: 'The platform could not start an independent Verifier.',
+    });
+
+    expect(nativePortableContinuation(unavailable)).toMatchObject({
+      disposition: 'await-user',
+      action: 'confirm-verifier-unavailable',
+      commandArgs: null,
+      requiredInputs: ['summary', 'user-decision'],
+      commandAlternatives: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'retry-verifier',
+          expectedAction: 'retry-verifier',
+          commandArgs: expect.arrayContaining(['--retry-verifier']),
+        }),
+        expect.objectContaining({
+          name: 'confirm-verifier-unavailable',
+          expectedAction: 'confirm-verifier-unavailable',
+          commandArgs: expect.arrayContaining(['--confirmed']),
+        }),
+      ]),
+      userCommunication: {
+        required: true,
+        suggestedReply: 'Retry independent verification',
+        agentInstruction: expect.stringContaining('commandAlternatives'),
+      },
+    });
+
+    const retried = retryNativeVerifier(unavailable);
+    expect(retried).toMatchObject({
+      phase: 'verify',
+      status: 'active',
+      verification_result: 'pending',
+      verification_report: null,
+      verification: null,
+      blockers: [],
+      loop: {
+        stage: 'verify-ready',
+        retry_epoch: 1,
+        execution_failure_count: 0,
+        previous_unresolved_ids: [],
+        next_action: 'dispatch-new-verifier',
+      },
+    });
+    expect(retried.acceptance.every(({ result }) => result === 'pending')).toBe(true);
+  });
+
+  it('keeps a partial repair scope when unavailable semantic verification is retried', () => {
+    const prepared = buildState();
+    let state = applyNativeVerifierEnvelope({
+      state: prepared.state,
+      envelope: envelope(prepared.runner, prepared.state, 'fail', ['A2']),
+      checks,
+      maxVerifyFailures: 5,
+    }).state;
+    state = submitNativeBuilderCandidate({
+      state,
+      input: {
+        identity: prepared.runner.captureExecutionIdentity({
+          identityProvider: state.builder_handoff!.identity_provider,
+          executionRef: 'builder-repair-unavailable',
+        }),
+        candidateId: 'candidate-repair-unavailable',
+        summary: 'Repaired A2.',
+        addressedAcceptanceIds: ['A2'],
+        review: {
+          status: 'passed',
+          summary: 'The A2 repair passed review.',
+          reviewerExecutionRef: 'reviewer-repair-unavailable',
+        },
+      },
+    });
+    state = reserveNativeVerifierAttempt(state);
+    state = recordNativeVerifierUnavailable({
+      state,
+      checks,
+      verifierExecutionRef: 'verifier-repair-unavailable',
+      summary: 'The platform temporarily lost independent verification.',
+    });
+
+    let retried = retryNativeVerifier(state);
+    expect(retried.acceptance).toMatchObject([
+      { id: 'A1', result: 'passed' },
+      { id: 'A2', result: 'pending' },
+    ]);
+    expect(retried.loop).toMatchObject({
+      stage: 'verify-ready',
+      previous_unresolved_ids: ['A2'],
+      next_action: 'dispatch-new-verifier',
+    });
+
+    retried = reserveNativeVerifierAttempt(retried);
+    const repairPassed = applyNativeVerifierEnvelope({
+      state: retried,
+      envelope: envelope(prepared.runner, retried, 'pass', [], ['A2']),
+      checks,
+      maxVerifyFailures: 5,
+    }).state;
+    expect(repairPassed).toMatchObject({
+      phase: 'verify',
+      status: 'active',
+      verification_result: 'pending',
+      loop: {
+        stage: 'verify-ready',
+        previous_unresolved_ids: [],
+        next_action: 'run-final-full-verification',
+      },
+    });
+    expect(repairPassed.acceptance.every(({ result }) => result === 'pending')).toBe(true);
   });
 
   it('rejects a stale execution error after a Skill-coordinated pass', () => {

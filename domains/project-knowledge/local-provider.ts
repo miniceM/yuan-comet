@@ -197,6 +197,21 @@ export class LocalProjectKnowledgeProvider implements ProjectKnowledgeProvider {
     }
   }
 
+  public async refreshIndex(): Promise<ProjectKnowledgeIndexStatus | null> {
+    const store = this.recordStore();
+    if (!store) return null;
+    try {
+      await store.syncCorpus(this.options.corpus);
+      return await store.indexStatus();
+    } catch {
+      this.reportDiagnostic?.({
+        code: 'index-unavailable',
+        message: 'Local project knowledge section index is unavailable.',
+      });
+      return null;
+    }
+  }
+
   public async query(request: ProjectKnowledgeQueryRequest): Promise<ProjectKnowledgeQueryResult> {
     const store = this.recordStore();
     if (request.kind === 'manifest') {
@@ -265,10 +280,21 @@ export class LocalProjectKnowledgeProvider implements ProjectKnowledgeProvider {
           ...(request.authority ? { authority: request.authority } : {}),
           ...(request.limit ? { limit: request.limit } : {}),
         }) ?? [];
+      const counts =
+        store &&
+        request.projectId &&
+        (request.state === undefined || request.state === 'all') &&
+        request.type === undefined &&
+        request.authority === undefined
+          ? store.projectCounts(request.projectId)
+          : undefined;
       return {
         kind: 'list',
         records,
-        truncated: request.limit !== undefined && records.length >= request.limit,
+        ...(counts === undefined ? {} : { counts }),
+        truncated:
+          request.limit !== undefined &&
+          (counts === undefined ? records.length >= request.limit : counts.total > records.length),
         diagnostics: store ? [] : [this.recordStoreError!],
       };
     }
@@ -317,37 +343,63 @@ export class LocalProjectKnowledgeProvider implements ProjectKnowledgeProvider {
     sections = await this.readCurrentSections(sections, diagnostics);
     const recordResults = store?.searchRecords(request.query) ?? [];
     const channels = [recordResults, sections, exact];
+    const queryTerms = [
+      ...new Set(request.query.terms.map((term) => term.toLocaleLowerCase()).filter(Boolean)),
+    ];
     const fused = new Map<string, { result: ProjectKnowledgeResult; score: number }>();
     for (const [channel, channelResults] of channels.entries()) {
       channelResults.forEach((result, rank) => {
-        const key = `${result.source}\u0000${result.title ?? ''}`;
+        const key = result.record
+          ? `record:${result.record.id}`
+          : `${result.source}\u0000${result.title ?? ''}`;
         const previous = fused.get(key);
         const score =
           (previous?.score ?? 0) +
           1 / (60 + rank + 1) +
-          (channel === 1 ? 0.025 : channel === 2 ? 0.03 : 0);
+          (channel === 0
+            ? (result.score ?? 0) >= 100
+              ? 0.08
+              : 0.01 + 0.08 * Math.min(1, (result.score ?? 0) / Math.max(1, queryTerms.length))
+            : channel === 1
+              ? 0.025
+              : 0.03);
         fused.set(key, { result: previous?.result ?? result, score });
       });
     }
     const results = new Map<string, ProjectKnowledgeResult>();
+    let recordCount = 0;
+    let droppedRecords = false;
     for (const { result } of [...fused.values()]
       .sort(
         (left, right) =>
-          right.score - left.score || left.result.source.localeCompare(right.result.source),
+          right.score - left.score ||
+          (left.result.record?.id ?? left.result.source).localeCompare(
+            right.result.record?.id ?? right.result.source,
+          ),
       )
       .map(({ result, score }) => ({ result: { ...result, score }, score }))) {
-      const key = `${result.source}\u0000${result.title ?? ''}`;
-      if (!results.has(key)) results.set(key, result);
+      const key = result.record
+        ? `record:${result.record.id}`
+        : `${result.source}\u0000${result.title ?? ''}`;
+      if (results.has(key)) continue;
+      if (result.record) {
+        if (recordCount >= 2) {
+          droppedRecords = true;
+          continue;
+        }
+        recordCount += 1;
+      }
+      results.set(key, result);
     }
     const limit = Math.max(1, Math.min(40, request.limit ?? 8));
     const bounded = [...results.values()].slice(0, limit);
-    const records = recordResults.flatMap((result) => (result.record ? [result.record] : []));
+    const records = bounded.flatMap((result) => (result.record ? [result.record] : []));
     return {
       kind: 'search',
       hits: records.map((record) => ({ record })),
       results: bounded,
       records,
-      truncated: results.size > bounded.length,
+      truncated: droppedRecords || results.size > bounded.length,
       diagnostics,
     };
   }
@@ -427,7 +479,7 @@ export class LocalProjectKnowledgeProvider implements ProjectKnowledgeProvider {
         } catch {
           diagnostics.push({
             code: 'local-document',
-            message: 'Local project knowledge source is unavailable.',
+            message: '未进入检索：索引来源当前不可读取，不会参与本次召回。',
           });
           return null;
         }
@@ -547,7 +599,7 @@ export class LocalProjectKnowledgeProvider implements ProjectKnowledgeProvider {
       } catch {
         this.reportDiagnostic?.({
           code: 'local-document',
-          message: `Project knowledge document was skipped: ${document.source}`,
+          message: `未进入检索：无法读取 ${document.source}，该文件当前不会参与召回。`,
         });
         continue;
       }

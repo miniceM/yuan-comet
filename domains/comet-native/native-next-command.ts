@@ -2,6 +2,7 @@ import { inspectNativeChildren } from './native-children.js';
 import { nativePortableContinuation } from './native-portable-continuation.js';
 import { migrateNativeLegacyChangeToPortable } from './native-portable-migration-runtime.js';
 import {
+  nativePortableWorkspaceMismatch,
   recoverNativePortableChange,
   type NativePortableRecoveryResult,
 } from './native-portable-recovery.js';
@@ -18,6 +19,9 @@ import {
   confirmNativePortableVerifierUnavailable,
   inspectNativePortableAcceptanceDrift,
   isNativePortableChange,
+  prepareNativePortableShapeConfirmation,
+  readNativePortableChange,
+  recoverNativeSupervisorFinalVerificationOnResume,
   resolveNativePortableVerifierBlocker,
   returnNativePortableChangeToBuild,
   returnNativePortableChangeToShape,
@@ -44,6 +48,7 @@ import {
 import type { NativeProjectPaths } from './native-types.js';
 
 const EXPECTED_CONTINUATION_ACTIONS = new Set<NativePortableExpectedContinuationAction>([
+  'prepare-shape-confirmation',
   'confirm-shape',
   'accept-result',
   'confirm-verifier-unavailable',
@@ -129,9 +134,6 @@ export async function nativeNextCommand(
   ) {
     throw new NativeUsageError('--coordination-mode must be multi-session or single-session');
   }
-  if (coordinationMode !== undefined && !confirmed) {
-    throw new NativeUsageError('--coordination-mode is only valid with --confirmed in Shape');
-  }
   const maxParallelText = takeOption(args, '--max-parallel');
   const maxParallel = maxParallelText === undefined ? 2 : Number(maxParallelText);
   if (!Number.isSafeInteger(maxParallel) || maxParallel < 1) {
@@ -152,6 +154,20 @@ export async function nativeNextCommand(
       '--confirmed, --accept-result, --revise-implementation, --revise-requirements, --retry-verifier, and --resolve-verifier-blocker are mutually exclusive',
     );
   }
+  if (
+    coordinationMode !== undefined &&
+    (confirmed ||
+      acceptResult ||
+      reviseImplementation ||
+      reviseRequirements ||
+      retryVerifier ||
+      resolveVerifierBlocker ||
+      runnerInputFile !== undefined)
+  ) {
+    throw new NativeUsageError(
+      '--coordination-mode is only valid when preparing a Supervisor Shape confirmation',
+    );
+  }
   // Agent-authored Build/Verify completion fields retired with Native v4.
   // Parsing the complete public surface before migration prevents a legacy
   // invocation from silently accepting one of those old fields.
@@ -170,9 +186,23 @@ export async function nativeNextCommand(
       name,
     });
     return success('next', {
-      state: nativePortableStateSummary(state),
+      state: nativePortableStateSummary(state, configured.paths),
       migration: { completed: true, summary },
       continuation: nativePortableContinuation(state),
+    });
+  }
+
+  const initialState = await readNativePortableChange(configured.paths, name);
+  const initialWorkspaceMismatch = nativePortableWorkspaceMismatch(configured.paths, initialState);
+  if (initialWorkspaceMismatch) {
+    return success('next', {
+      state: nativePortableStateSummary(initialState, configured.paths),
+      recovery: {
+        action: 'await-user',
+        reason: 'workspace-mismatch',
+        message: initialWorkspaceMismatch,
+      },
+      ...(await portableParentView(configured.paths, initialState)),
     });
   }
 
@@ -185,11 +215,22 @@ export async function nativeNextCommand(
       reviseRequirements ||
       retryVerifier ||
       resolveVerifierBlocker ||
+      coordinationMode !== undefined ||
       expectedContinuation
     ) {
       throw new NativeUsageError(
         '--runner-input cannot be combined with --summary, continuation expectations, or Agent transition flags',
       );
+    }
+    const supervisorRecovery = await recoverNativeSupervisorFinalVerificationOnResume({
+      paths: configured.paths,
+      name,
+    });
+    if (supervisorRecovery.action === 'rerun-final-verification') {
+      return success('next', {
+        state: nativePortableStateSummary(supervisorRecovery.state, configured.paths),
+        ...(await portableParentView(configured.paths, supervisorRecovery.state)),
+      });
     }
     const recovery = await recoverNativePortableChange({
       paths: configured.paths,
@@ -203,7 +244,7 @@ export async function nativeNextCommand(
       recovery.reason !== 'available'
     ) {
       return success('next', {
-        state: nativePortableStateSummary(current),
+        state: nativePortableStateSummary(current, configured.paths),
         recovery: compactRecoveryResult(recovery),
         ...(await portableParentView(configured.paths, current)),
       });
@@ -220,7 +261,7 @@ export async function nativeNextCommand(
           reason: drift.reason ?? 'Native confirmed requirements changed',
         });
         return success('next', {
-          state: nativePortableStateSummary(state),
+          state: nativePortableStateSummary(state, configured.paths),
           ...(await portableParentView(configured.paths, state)),
         });
       }
@@ -241,9 +282,19 @@ export async function nativeNextCommand(
     });
     return success('next', {
       ...compactRunnerResult(result),
-      state: nativePortableStateSummary(result.state),
+      state: nativePortableStateSummary(result.state, configured.paths),
       ...(await portableParentView(configured.paths, result.state)),
       coordination: NATIVE_SKILL_COORDINATION,
+    });
+  }
+  const supervisorRecovery = await recoverNativeSupervisorFinalVerificationOnResume({
+    paths: configured.paths,
+    name,
+  });
+  if (supervisorRecovery.action === 'rerun-final-verification') {
+    return success('next', {
+      state: nativePortableStateSummary(supervisorRecovery.state, configured.paths),
+      ...(await portableParentView(configured.paths, supervisorRecovery.state)),
     });
   }
   const recovery = await recoverNativePortableChange({ paths: configured.paths, name });
@@ -257,13 +308,25 @@ export async function nativeNextCommand(
     ReturnType<typeof inspectNativeSupervisorParentReviewReadiness>
   > | null = null;
   if (confirmed) {
-    if (current.phase === 'shape') {
+    if (
+      current.phase === 'shape' &&
+      current.status === 'await-user' &&
+      current.loop.next_action === 'confirm-shape'
+    ) {
+      if (!expectedContinuation) {
+        throw new NativeUsageError(
+          '--expected-state-version and --expected-action are required for Shape confirmation',
+        );
+      }
       state = await confirmNativePortableShape({
         paths: configured.paths,
         name,
-        ...(coordinationMode === undefined ? {} : { coordinationMode }),
         expectedContinuation,
       });
+    } else if (current.phase === 'shape') {
+      throw new NativeUsageError(
+        '--confirmed is only valid from the persisted Shape user confirmation boundary',
+      );
     } else if (
       current.phase === 'verify' &&
       current.status === 'await-user' &&
@@ -327,12 +390,13 @@ export async function nativeNextCommand(
     state = await resolveNativePortableVerifierBlocker({
       paths: configured.paths,
       name,
+      reason: summary,
       expectedContinuation,
     });
   } else {
     if (recovery.reason !== 'available') {
       return success('next', {
-        state: nativePortableStateSummary(current),
+        state: nativePortableStateSummary(current, configured.paths),
         recovery: compactRecoveryResult(recovery),
         ...(await portableParentView(configured.paths, current)),
       });
@@ -384,7 +448,7 @@ export async function nativeNextCommand(
             state = parentAdvance.state;
           } else {
             return success('next', {
-              state: nativePortableStateSummary(current),
+              state: nativePortableStateSummary(current, configured.paths),
               childSummary: effectiveChildren.children.reduce<Record<string, number>>(
                 (childSummary, child) => ({
                   ...childSummary,
@@ -400,9 +464,17 @@ export async function nativeNextCommand(
         }
       }
     }
+    if (current.phase === 'shape') {
+      state = await prepareNativePortableShapeConfirmation({
+        paths: configured.paths,
+        name,
+        ...(coordinationMode === undefined ? {} : { coordinationMode }),
+        expectedContinuation,
+      });
+    }
     if (state) {
       return success('next', {
-        state: nativePortableStateSummary(state),
+        state: nativePortableStateSummary(state, configured.paths),
         ...(parentAdvance ? { parentAdvance: parentAdvance.parentAdvance } : {}),
         ...(await portableParentView(configured.paths, state)),
       });
@@ -415,7 +487,7 @@ export async function nativeNextCommand(
       command: 'next',
       exitCode: 65,
       data: {
-        state: nativePortableStateSummary(current),
+        state: nativePortableStateSummary(current, configured.paths),
         continuation: nativePortableContinuation(current, continuationChildren),
       },
       error: {
@@ -426,7 +498,7 @@ export async function nativeNextCommand(
     };
   }
   return success('next', {
-    state: nativePortableStateSummary(state),
+    state: nativePortableStateSummary(state, configured.paths),
     ...(coordinationMode === undefined ? {} : { coordinationMode }),
     ...(await portableParentView(configured.paths, state)),
   });

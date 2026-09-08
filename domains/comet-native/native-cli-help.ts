@@ -10,6 +10,7 @@ interface NativeHelpEntry {
 const GLOBAL_OPTIONS = [
   '--project-root <path>  Resolve the Native project from this working directory.',
   '--json                 Emit the stable JSON command envelope.',
+  '--verbose              Append the raw machine projection after the human/agent text.',
   '--help                 Show help without requiring an initialized project.',
 ] as const;
 
@@ -33,7 +34,8 @@ const HELP: Readonly<Record<string, NativeHelpEntry>> = Object.freeze({
       'doctor [<change-name>]       Diagnose, migrate, or rebuild local execution state.',
     ],
     options: GLOBAL_OPTIONS,
-    output: 'Human-readable text by default; use --json for a structured command envelope.',
+    output:
+      'A human summary plus a NEXT step by default (RELAY TO USER blocks carry user decisions); use --json for the structured envelope, --verbose to append the raw machine projection.',
     examples: [
       'comet native status --json',
       'comet native status my-change --details --json',
@@ -130,17 +132,17 @@ const HELP: Readonly<Record<string, NativeHelpEntry>> = Object.freeze({
   },
   next: {
     usage:
-      'comet native next <change-name> --summary <text> [--confirmed] [--coordination-mode multi-session|single-session] [--accept-result|--revise-implementation|--revise-requirements|--retry-verifier|--resolve-verifier-blocker] [--max-parallel <n>] [--expected-state-version <n>] [--expected-action <action>]\n       comet native next <change-name> --runner-input <json-file>',
+      'comet native next <change-name> --summary <text> [--coordination-mode multi-session|single-session] [--max-parallel <n>] [--expected-state-version <n>] [--expected-action <action>]\n       comet native next <change-name> --summary <text> [--confirmed|--accept-result|--revise-implementation|--revise-requirements|--retry-verifier|--resolve-verifier-blocker] [--expected-state-version <n>] [--expected-action <action>]\n       comet native next <change-name> --runner-input <json-file>',
     purpose:
       'Confirm or recover an Agent boundary, advance parent child changes, handle Supervisor task operations, or use one skill-coordinated JSON bridge for Builder handoff, check-plan dispatch, and Verifier response/error.',
     options: [
       '--summary <text>    Required transition or recovery summary.',
-      '--confirmed         Confirm Shape or an explicitly degraded verifier-unavailable fallback before Archive.',
-      '--coordination-mode multi-session|single-session  Required when confirming a multi-child Supervisor Shape.',
+      '--confirmed         Confirm the persisted Shape boundary with both expected guards, or confirm an explicitly degraded verifier-unavailable fallback before Archive.',
+      '--coordination-mode multi-session|single-session  Select how a multi-child Supervisor proceeds while preparing its Shape confirmation; final Shape confirmation is a later, separate step.',
       '--accept-result     Accept the current skill-coordinated Verify result and make it archive-ready.',
       '--revise-implementation  Keep confirmed requirements unchanged and return Verify to Build for implementation revision.',
       '--revise-requirements    Return Verify or Archive to Shape when user-visible goals or acceptance criteria must change.',
-      '--retry-verifier    Retry a blocked Verifier execution when the continuation allows it.',
+      '--retry-verifier    Retry a failed or unavailable Verifier when the continuation allows it.',
       '--resolve-verifier-blocker  Resolve a semantic Verifier blocker without changing the candidate, then dispatch a new attempt.',
       '--max-parallel <n>  Supervisor task concurrency cap; defaults to 2, use 1 for serial fallback.',
       '--expected-state-version <n>  Continuation-issued guard that rejects stale public transition decisions.',
@@ -156,7 +158,7 @@ const HELP: Readonly<Record<string, NativeHelpEntry>> = Object.freeze({
     output:
       'A compact portable state summary, explicit skill-coordinated label, Runtime-owned check results, scoped verifierDispatch, bounded request-check response, continuation.runnerAction, machine-readable continuation.inputOptions, and continuation.userCommunication with a user-ready message and Agent relay guidance. Read acceptance text and other long fields from paged status --details output. Human-readable verification statuses include "Host independently verified", "Checks completed, but your confirmation is required", "Full verification was unavailable; only automatic checks completed", and "You accepted the incomplete verification result". This generic bridge is not trusted identity attestation: a passing result waits for explicit user confirmation before Archive.',
     examples: [
-      'comet native next session-timeout --summary "Shape confirmed" --confirmed',
+      'comet native next session-timeout --summary "Shape confirmed" --confirmed --expected-state-version <n> --expected-action confirm-shape',
       'comet native next session-timeout --summary "Current result accepted" --accept-result',
       'comet native next session-timeout --summary "Implementation needs revision" --revise-implementation',
       'comet native next session-timeout --summary "Acceptance criteria changed" --revise-requirements',
@@ -171,13 +173,13 @@ const HELP: Readonly<Record<string, NativeHelpEntry>> = Object.freeze({
     purpose:
       'Preview or execute deterministic Archive after the portable state reaches archive-ready.',
     options: [
-      '--dry-run          Inspect readiness without rerunning verification.',
+      '--dry-run          Run the complete read-only Archive and workspace-finish readiness check; it persists only an explicit --finish choice.',
       '--finish <action>  Persist merge, push, pull-request, or keep for an isolated workspace.',
       '--serial-first <current-change>  During execution only, confirm that this change archives before detected capability peers; the value must equal <change-name>.',
       '--confirmed        Confirm Archive when project policy requires it.',
     ],
     output:
-      'Readiness plus continuation, or the completed Archive transaction and workspace finish result; Archive does not repeat verification.',
+      'Readiness, every blocker, and the exact next continuation, or the completed Archive transaction and workspace finish result. Execute the returned confirmed command only after ready is true; Archive does not repeat verification.',
   },
   doctor: {
     usage: 'comet native doctor [<change-name>] [--repair]',

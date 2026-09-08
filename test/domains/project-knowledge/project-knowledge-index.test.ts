@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,6 +20,27 @@ async function temporaryRoot(): Promise<string> {
 }
 
 describe('project knowledge query planning', () => {
+  test('keeps mixed-language identifiers and complete Chinese words in task queries', () => {
+    const worktree = createProjectKnowledgeQuery({
+      task: '排查两个 worktree 的项目知识索引与源码状态互相覆盖',
+    });
+    expect(worktree.terms).toEqual(
+      expect.arrayContaining(['worktree', '项目', '知识', '索引', '源码', '状态']),
+    );
+    const feedback = createProjectKnowledgeQuery({
+      task: '给上下文反馈新增 sourceNote，保证重启重放和重复计数正确',
+    });
+    expect(feedback.terms).toEqual(
+      expect.arrayContaining(['sourceNote', '反馈', '重启', '重放', '重复', '计数']),
+    );
+    expect(worktree.weakTerms.length).toBeLessThanOrEqual(PROJECT_KNOWLEDGE_QUERY_BUDGETS.weak);
+    expect(feedback.weakTerms.length).toBeLessThanOrEqual(PROJECT_KNOWLEDGE_QUERY_BUDGETS.weak);
+    const bilingual = createProjectKnowledgeQuery({
+      task: 'update command output response behavior context storage service module entry 索引知识查询',
+    });
+    expect(bilingual.weakTerms).toEqual(expect.arrayContaining(['update', '索引', '知识', '查询']));
+  });
+
   test('reserves strong, phrase, and weak budgets independently', () => {
     const query = createProjectKnowledgeQuery({
       task: [
@@ -87,6 +109,64 @@ describe('project knowledge section index', () => {
       after.close();
       expect(stableAfter).toEqual(stable);
       expect(updated.body).toContain('New details');
+    } finally {
+      store.close();
+      await fs.rm(root, { recursive: true, force: true });
+      await fs.rm(cacheRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('stores a content digest and refreshes metadata without treating an mtime-only change as new content', async () => {
+    const root = await temporaryRoot();
+    const cacheRoot = await temporaryRoot();
+    const source = 'docs/comet/specs/digest.md';
+    const file = path.join(root, ...source.split('/'));
+    const content = '# Digest\n\nContent stays the same.\n';
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, content);
+    const store = new ProjectKnowledgeIndexStore({ projectRoot: root, cacheRoot });
+    try {
+      await store.syncCorpus([{ absolutePath: file, source, kind: 'native-spec' }]);
+      const firstDigest = new DatabaseSync(store.databasePath, { readOnly: true });
+      const firstRow = firstDigest
+        .prepare('SELECT digest FROM pk_sources WHERE source = ?')
+        .get(source) as { digest: string };
+      firstDigest.close();
+
+      await fs.utimes(file, new Date(), new Date(Date.now() + 2000));
+      const refreshed = await store.syncCorpus([
+        { absolutePath: file, source, kind: 'native-spec' },
+      ]);
+      const secondDigest = new DatabaseSync(store.databasePath, { readOnly: true });
+      const secondRow = secondDigest
+        .prepare('SELECT digest FROM pk_sources WHERE source = ?')
+        .get(source) as { digest: string };
+      secondDigest.close();
+
+      expect(firstRow.digest).toBe(createHash('sha256').update(content).digest('hex'));
+      expect(secondRow.digest).toBe(firstRow.digest);
+      expect(refreshed.changedSources).toEqual([]);
+      expect(refreshed.refreshedSources).toEqual([
+        { absolutePath: file, source, kind: 'native-spec' },
+      ]);
+
+      const stableStat = await fs.stat(file);
+      const changedContent = content.replace('stays', 'holds');
+      expect(Buffer.byteLength(changedContent)).toBe(Buffer.byteLength(content));
+      await fs.writeFile(file, changedContent);
+      await fs.utimes(file, stableStat.atime, stableStat.mtime);
+      const changed = await store.syncCorpus([{ absolutePath: file, source, kind: 'native-spec' }]);
+      const changedDigest = new DatabaseSync(store.databasePath, { readOnly: true });
+      const changedRow = changedDigest
+        .prepare('SELECT digest FROM pk_sources WHERE source = ?')
+        .get(source) as { digest: string };
+      changedDigest.close();
+
+      expect(changedRow.digest).not.toBe(secondRow.digest);
+      expect(changed.changedSources).toEqual([]);
+      expect(changed.refreshedSources).toEqual([
+        { absolutePath: file, source, kind: 'native-spec' },
+      ]);
     } finally {
       store.close();
       await fs.rm(root, { recursive: true, force: true });
