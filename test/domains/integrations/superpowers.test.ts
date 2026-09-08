@@ -38,8 +38,8 @@ const SUPERPOWERS_SKILL_ARGS = [
   'writing-skills',
 ];
 
-function expectedSuperpowersArgs(...suffix: string[]): string[] {
-  return ['skills', 'add', 'obra/superpowers', '-y', ...SUPERPOWERS_SKILL_ARGS, ...suffix];
+function expectedSuperpowersArgs(scope: 'project' | 'global' = 'project'): string[] {
+  return ['install', ...(scope === 'global' ? ['-g'] : []), 'superpowers-zh'];
 }
 
 describe('superpowers', () => {
@@ -163,32 +163,17 @@ describe('superpowers', () => {
       expect(result).toBe('installed');
       const command = mockedExecFileSync.mock.calls[0][0] as string;
       const args = mockedExecFileSync.mock.calls[0][1] as string[];
-      expect(command).toBe(process.platform === 'win32' ? 'npx.cmd' : 'npx');
-      expect(args).toContain('skills');
-      expect(args).toContain('add');
-      expect(args).toContain('obra/superpowers');
-      expect(args).toContain('-y');
-      expect(args).toContain('--agent');
-      expect(args).toContain('claude-code');
-      expect(args).toContain('cursor');
+      expect(command).toBe(process.platform === 'win32' ? 'npm.cmd' : 'npm');
+      expect(args).toContain('install');
+      expect(args).toContain('superpowers-zh');
       expect(mockedExecFileSync.mock.calls[0][2]).toMatchObject({ timeout: 300_000 });
     });
 
-    it('does not select the user-level using-superpowers skill', async () => {
-      const { buildSuperpowersInstallCommand } =
+    it('does not include the user-level using-superpowers skill in standard skills list', async () => {
+      const { SUPERPOWERS_SKILL_NAMES } =
         await import('../../../domains/integrations/superpowers.js');
 
-      const { args } = buildSuperpowersInstallCommand('/tmp/test', 'global', ['claude']);
-      const selectedSkills = args.flatMap((arg, index) =>
-        arg === '--skill' ? [args[index + 1]] : [],
-      );
-
-      expect(selectedSkills).toEqual(
-        SUPERPOWERS_SKILL_ARGS.filter((arg) => arg !== '--skill').filter(
-          (arg) => arg !== 'using-superpowers',
-        ),
-      );
-      expect(selectedSkills).not.toContain('using-superpowers');
+      expect(SUPERPOWERS_SKILL_NAMES).not.toContain('using-superpowers');
     });
 
     it('copies staged Grok Superpowers and writes a Comet install manifest', async () => {
@@ -214,7 +199,7 @@ describe('superpowers', () => {
         ).toBe(true);
         const manifestPath = getStagedSuperpowersManifestPath(projectDir, '.grok');
         expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toEqual({
-          source: 'obra/superpowers',
+          source: 'superpowers-zh',
           skills: ['brainstorming'],
         });
       } finally {
@@ -288,18 +273,18 @@ describe('superpowers', () => {
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildSuperpowersInstallCommand('/tmp/test', 'project', ['claude', 'cursor'])).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code', '--agent', 'cursor'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
-    it('excludes Lingma from the skills CLI command because skills@1.5.7 does not support it', async () => {
+    it('builds install command regardless of supported agent mappings', async () => {
       const { buildSuperpowersInstallCommand } =
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildSuperpowersInstallCommand('/tmp/test', 'project', ['claude', 'lingma'])).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
@@ -308,8 +293,8 @@ describe('superpowers', () => {
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildLingmaSuperpowersStageCommand()).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
@@ -318,8 +303,8 @@ describe('superpowers', () => {
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildZCodeSuperpowersStageCommand()).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
@@ -328,8 +313,8 @@ describe('superpowers', () => {
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildMimoCodeSuperpowersStageCommand()).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
@@ -338,8 +323,8 @@ describe('superpowers', () => {
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildOhMyPiSuperpowersStageCommand()).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
@@ -348,19 +333,19 @@ describe('superpowers', () => {
         await import('../../../domains/integrations/superpowers.js');
 
       expect(buildDshSuperpowersStageCommand()).toEqual({
-        command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-        args: expectedSuperpowersArgs('--agent', 'claude-code'),
+        command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+        args: expectedSuperpowersArgs('project'),
       });
     });
 
-    it('installs ZCode superpowers via the claude-code staging flow', async () => {
+    it('installs ZCode superpowers via the staging flow', async () => {
       mockedExecFileSync.mockImplementation((command: unknown, args?: unknown, opts?: unknown) => {
         const cmd = String(command);
         const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
         if (
-          (cmd === 'npx' || cmd === 'npx.cmd') &&
-          cmdArgs[0] === 'skills' &&
-          cmdArgs.includes('claude-code')
+          (cmd === 'npm' || cmd === 'npm.cmd') &&
+          cmdArgs.includes('install') &&
+          cmdArgs.includes('superpowers-zh')
         ) {
           const cwd = (opts as { cwd?: string } | undefined)?.cwd ?? os.tmpdir();
           const stagedSkillsDir = path.join(cwd, '.claude', 'skills', 'brainstorming');
@@ -377,19 +362,19 @@ describe('superpowers', () => {
       expect(result).toBe('installed');
       const stagingCall = mockedExecFileSync.mock.calls.find((call) => {
         const cmdArgs = Array.isArray(call[1]) ? call[1].map((a) => String(a)) : [];
-        return cmdArgs.includes('claude-code') && cmdArgs.includes('obra/superpowers');
+        return cmdArgs.includes('install') && cmdArgs.includes('superpowers-zh');
       });
       expect(stagingCall).toBeDefined();
     });
 
-    it('installs MimoCode superpowers via the claude-code staging flow', async () => {
+    it('installs MimoCode superpowers via the staging flow', async () => {
       mockedExecFileSync.mockImplementation((command: unknown, args?: unknown, opts?: unknown) => {
         const cmd = String(command);
         const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
         if (
-          (cmd === 'npx' || cmd === 'npx.cmd') &&
-          cmdArgs[0] === 'skills' &&
-          cmdArgs.includes('claude-code')
+          (cmd === 'npm' || cmd === 'npm.cmd') &&
+          cmdArgs.includes('install') &&
+          cmdArgs.includes('superpowers-zh')
         ) {
           const cwd = (opts as { cwd?: string } | undefined)?.cwd ?? os.tmpdir();
           const stagedSkillsDir = path.join(cwd, '.claude', 'skills', 'brainstorming');
@@ -408,7 +393,7 @@ describe('superpowers', () => {
         expect(result).toBe('installed');
         const stagingCall = mockedExecFileSync.mock.calls.find((call) => {
           const cmdArgs = Array.isArray(call[1]) ? call[1].map((a) => String(a)) : [];
-          return cmdArgs.includes('claude-code') && cmdArgs.includes('obra/superpowers');
+          return cmdArgs.includes('install') && cmdArgs.includes('superpowers-zh');
         });
         expect(stagingCall).toBeDefined();
       } finally {

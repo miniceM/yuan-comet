@@ -721,7 +721,7 @@ async function checkSuperpowers(
   return {
     check: 'Superpowers',
     status: 'warn',
-    message: 'not detected — install with: npx skills add obra/superpowers -y --agent <platform>',
+    message: 'not detected — install with: npm install superpowers-zh or run comet init',
   };
 }
 

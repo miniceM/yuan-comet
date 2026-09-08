@@ -963,7 +963,8 @@ async function readLockedSuperpowersSkillNames(projectPath: string): Promise<str
     entry &&
     typeof entry === 'object' &&
     !Array.isArray(entry) &&
-    (entry as Record<string, unknown>).source === 'obra/superpowers'
+    ((entry as Record<string, unknown>).source === 'superpowers-zh' ||
+      (entry as Record<string, unknown>).source === 'obra/superpowers')
       ? [name]
       : [],
   );
@@ -1070,7 +1071,10 @@ async function removeSuperpowersSkillsForPlatforms(
       source?: unknown;
     }>;
     listedNames = listed.flatMap((skill) =>
-      skill.source === 'obra/superpowers' && typeof skill.name === 'string' ? [skill.name] : [],
+      (skill.source === 'superpowers-zh' || skill.source === 'obra/superpowers') &&
+      typeof skill.name === 'string'
+        ? [skill.name]
+        : [],
     );
   } catch {
     if (agents.length > 0 && lockedNames.length === 0 && stagedCopyPlatforms.length === 0) {
