@@ -10,6 +10,10 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 - **Host Agent knowledge review**: Agents can review queued project experience with `comet knowledge review` and submit reusable lessons without configuring another model or API key; new lessons remain trial records until successful use.
 - **Task knowledge adoption evidence**: Agents can attach the concrete decision and actual verification result to context feedback; the Dashboard shows this evidence separately from delivery, and feedback survives retries and restarts without counting repeated submissions twice.
 
+### Changed
+
+- **Superpowers installation from npm superpowers-zh**: Switched Superpowers dependency installation from the remote GitHub repository clone (`obra/superpowers` via `@vercel/skills`) to the npm package `superpowers-zh`. Skills are now distributed directly from the bundled npm dependency, providing reliable offline-capable distribution, full Chinese skill localization, and additional workflow skills while strictly excluding `using-superpowers` to preserve Comet as the sole workflow controller.
+
 ### Fixed
 
 - **Project registry recovery**: Automatically removes missing temporary projects leaked by older update tests when the upgraded CLI or Dashboard reads the registry, while preserving ordinary missing projects and inaccessible directories.
