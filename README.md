@@ -172,6 +172,11 @@ comet init --workflow classic
 comet init --workflow both
 ```
 
+Codebase Memory is an optional integration. It is not enabled automatically by ordinary `--yes`, `--json`, or first-time
+interactive initialization. Use `comet init --codebase-memory install` to install the CLI and register MCP with selected
+Agents, or `comet init --codebase-memory init` to initialize only the current project index. Project indexes are matched
+by canonical path, global scope never indexes the calling project, and JSON output exposes `codebaseMemory` diagnostics.
+
 ### Project configuration
 
 `comet init` generates `.comet/config.yaml` with field-level comments in the selected language. `comet update` fills new managed defaults while preserving user values and unknown extensions.
