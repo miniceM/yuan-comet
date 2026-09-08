@@ -141,6 +141,7 @@
   "domainModules": [
     "agent-learning",
     "bundle",
+    "code-intelligence",
     "comet-classic",
     "comet-entry",
     "comet-memory",

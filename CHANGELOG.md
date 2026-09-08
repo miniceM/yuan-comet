@@ -2,6 +2,12 @@
 
 All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
+## What's Changed [0.4.0-rc.6] - 2026-09-08
+
+### Added
+
+- **Optional Codebase Memory integration**: `comet init` can explicitly install `codebase-memory-mcp`, register it with selected Agent configurations, and initialize a canonical project index while preserving unrelated MCP entries and existing CodeGraph behavior. `comet doctor` reports CLI, Agent registration, and project-index health separately and can repair only an authorized project index.
+
 ## What's Changed [0.4.0-rc.2] - 2026-09-02
 
 ### Added

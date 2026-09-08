@@ -258,11 +258,16 @@ Comet Eval的自动化双Agent架构能够在线上与LangSmith/LangFuse环境�
 | `--workflow <mode>` | 初始化工作流：`native`、`classic` 或 `both`          |
 | `--root <path>`     | Native 的项目内产物根目录；全局范围时保存为项目相对默认值 |
 | `--codegraph <action>` | 非交互式项目索引操作：显式选择 `init` 或 `skip`    |
+| `--codebase-memory <action>` | 可选安装 Codebase Memory：`install`、`init` 或 `skip` |
 | `--skip-existing`   | 跳过已安装的组件                                     |
 | `--overwrite`       | 覆盖已安装的组件                                     |
 | `--json`            | 输出结构化 JSON                                      |
 
 当同一平台检测到多个已安装组件时，交互式 init 会先提供一次批量选择：全部覆盖、全部跳过，或逐项选择。
+
+Codebase Memory 不会在普通 `--yes`、`--json` 或首次交互初始化中自动启用。需要时使用
+`--codebase-memory install` 安装程序并把 MCP 注册到选定 Agent；使用 `init` 只初始化当前项目索引，
+不会修改 Agent 配置。项目索引严格按真实路径匹配，`global` 范围不执行项目索引。结果 JSON 会在顶层和各平台结果中提供 `codebaseMemory`。
 
 </details>
 
@@ -312,13 +317,14 @@ Comet Eval的自动化双Agent架构能够在线上与LangSmith/LangFuse环境�
 检查项目级/全局安装、工作目录、已安装技能、脚本、CodeGraph 索引，以及活跃 change 的诊断信息。`comet doctor` 会对畸形
 `.comet.yaml` 报告 diagnostic 状态，对有效 change 报告 current step / runtime mode，并指出哪些运行时证据缺失导致无法安全恢复。在 Git secondary worktree 中，它会分别报告当前 worktree、primary worktree 与 global fallback 的安装状态；primary 中被忽略的资产只用于分类，不会跨 worktree 执行。
 CodeGraph 诊断会分别展示 CLI 是否已安装、当前项目索引是否最新、MCP 是否已注册到受支持的 Agent，以及每个 Agent 是否真正具备有效能力；项目索引正常不代表某个 Agent 已注册 MCP。
+Codebase Memory 以相同方式分层报告 CLI、Agent MCP 注册和项目索引状态；未启用时显示未配置，不会把旧项目判为故障。
 
 | 选项              | 描述                                                                         |
 | ----------------- | ---------------------------------------------------------------------------- |
-| `--json`          | 输出结构化诊断结果，包括 CodeGraph 状态与有效 runtime 来源                   |
+| `--json`          | 输出结构化诊断结果，包括 CodeGraph、Codebase Memory 状态与有效 runtime 来源 |
 | `--scope <scope>` | 诊断 `auto`、`project` 或 `global` 范围（默认：`auto`）                      |
 | `--repair`        | 修复可确定恢复的托管安装与状态                                                |
-| `--yes`           | 与 `--repair` 同用，显式授权 CodeGraph 初始化、重建或同步等可能耗时的项目修复 |
+| `--yes`           | 与 `--repair` 同用，显式授权 CodeGraph 或 Codebase Memory 项目索引修复       |
 
 </details>
 

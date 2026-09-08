@@ -80,6 +80,7 @@ describe('repository layout registry', () => {
     expect(layout.domainModules).toEqual([
       'agent-learning',
       'bundle',
+      'code-intelligence',
       'comet-classic',
       'comet-entry',
       'comet-memory',

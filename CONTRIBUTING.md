@@ -267,6 +267,7 @@ domains/             # Business domain modules
 ├── engine/          # Generic execution engine (loop / state / guardrails / evals)
 ├── eval/            # comet eval harness
 ├── factory/         # Skill creator artifact packaging
+├── code-intelligence/ # Codebase Memory MCP installation, configuration, indexing, and diagnostics
 ├── integrations/    # Third-party integrations (openspec / superpowers / codegraph)
 ├── project-knowledge/ # Local/remote retrieval of Comet-managed project documents
 ├── skill/           # Skill install, discovery, preferences, snapshot

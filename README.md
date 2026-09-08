@@ -276,12 +276,18 @@ Initializes Comet for selected AI coding platforms. Interactive setup selects Na
 | `--workflow <mode>` | Workflows to initialize: `native`, `classic`, or `both`                        |
 | `--root <path>`     | Project-relative Native artifact root; global scope stores it as a project default |
 | `--codegraph <action>` | Non-interactive project index action: explicitly choose `init` or `skip`    |
+| `--codebase-memory <action>` | Optional Codebase Memory setup: `install`, `init`, or `skip`                 |
 | `--skip-existing`   | Skip already installed components                                              |
 | `--overwrite`       | Overwrite already installed components                                         |
 | `--json`            | Output structured JSON                                                         |
 
 When multiple existing components are found on the same platform, interactive init offers one bulk choice: overwrite
 all, skip all, or choose per component.
+
+Codebase Memory is not enabled automatically by ordinary `--yes`, `--json`, or first-time interactive initialization.
+Use `--codebase-memory install` to install the program and register MCP with selected Agents; use `init` to initialize
+only the current project index without changing Agent configuration. Project indexes are matched by canonical path, and
+global scope never indexes the calling project. JSON output includes `codebaseMemory` at the top level and per platform.
 
 </details>
 
@@ -335,13 +341,15 @@ are inspected only for classification and are never executed across worktrees.
 CodeGraph diagnostics separately report whether the CLI is installed, whether the current project index is current, whether
 MCP is registered with a supported Agent, and whether each Agent has effective capability; a healthy project index does not
 mean that an Agent has CodeGraph MCP registration.
+Codebase Memory is diagnosed in the same layers: CLI, Agent MCP registration, and project index. Unconfigured legacy
+projects are reported as not configured rather than unhealthy.
 
 | Option            | Description                                                                                   |
 | ----------------- | --------------------------------------------------------------------------------------------- |
-| `--json`          | Output structured diagnostics, including CodeGraph state and the effective runtime source    |
+| `--json`          | Output structured diagnostics, including CodeGraph, Codebase Memory, and runtime state       |
 | `--scope <scope>` | Diagnose `auto`, `project`, or `global` scope (default: `auto`)                               |
 | `--repair`        | Repair deterministic managed-install and state problems                                       |
-| `--yes`           | Use with `--repair` to authorize potentially expensive CodeGraph initialization, rebuild, or sync |
+| `--yes`           | Use with `--repair` to authorize CodeGraph or Codebase Memory project-index repair            |
 
 </details>
 
