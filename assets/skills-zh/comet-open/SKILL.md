@@ -60,7 +60,45 @@ comet classic openspec -- --version
 
 本流程要求 **OpenSpec >= 1.5.0**。版本低于 1.5.0、无法解析版本、命令不可用或返回非零退出码时立即停止，并提示运行 `npm install -g @fission-ai/openspec@latest` 后重试；不得继续使用缺少 `applyRequires`、`artifactPaths`、`changeRoot` 或 `resolvedOutputPath` 契约的旧 CLI。
 
-### 1. 探索想法与需求澄清
+### 0d. 企业身份与外部依赖检查（iam 与 dop）
+
+在正式开始新 change 的需求探索与创建前，执行企业身份认证与外部依赖检查：
+
+1. **iam 认证校验**：
+   运行身份状态查询：
+   ```bash
+   iam auth status --json
+   ```
+   - 解析返回结果：`credentials` 列表必须非空，且每一项凭据状态均为 `logged`（例如包含 devops 和代码仓库的登录凭证）。
+   - **未授权处理**：若返回未登录（如 credentials 为空）、凭据不足或命令执行失败，输出提示（建议运行 `iam auth login` 完成登录），并**立即停止流程**，禁止在未认证状态下创建新变更。
+
+2. **dop CLI 可用性检查**：
+   运行：
+   ```bash
+   dop change list
+   ```
+   - 若 `dop` 命令不可用或未安装：输出警告说明（未检测到企业 dop CLI），流程降级为纯自然语言交互模式，继续后续步骤。
+
+3. **Pending DOP 任务检查**：
+   - 检查归档变更目录（如 `<classic-archive-root>/*/.meta.json` 或 `.comet.yaml`）中是否存在未闭环的外部记录（`dop_completion.status: pending`）。
+   - 若存在：提示警告“检测到有历史变更的 PR 已交付但外部 DOP 尚未完成，建议核验或先处理 pending DOP”，并由用户确认继续。
+
+### 1. 探索想法与需求澄清（含 DOP 需求获取）
+
+在进入需求澄清前，先根据用户输入准备需求上下文：
+
+1. **DOP 需求关联与获取**：
+   - **输入匹配 Change ID**：若用户请求参数或会话输入匹配 `^[A-Z]{2,6}\d+$`（如 `ARD123456`），直接作为 `change-id`，执行：
+     ```bash
+     dop change view <change-id> --json
+     ```
+     获取该变更的完整需求信息，包括 `summary`（概述）、`description`（描述）、`storyAC`（变更所属用户故事的验收标准）、`subSystems`（关联子系统）以及 `userStory`（用户故事及相关排期）。
+     若拉取详情失败（例如网络超时或变更不存在），输出警告并降级允许用户手动提供/确认需求信息，继续流程。
+   - **输入为自然语言**：若用户输入的是业务描述而非 change-id，且 `dop` 可用，运行 `dop change list`（或 `dop change list --json`）列出当前用户的候选需求变更，交互提示用户选择已有变更或直接输入 `change-id`；用户亦可选择跳过，使用纯自然语言作为业务背景。
+2. **需求上下文融入**：
+   - 将通过 DOP 获取或用户确认的 `summary`、`description`、`storyAC`、`subSystems` 以及 `userStory`（排期信息）作为事实源，直接融入到需求澄清中，确保目标、非目标、范围边界和验收场景草案与之对齐。
+   - 后续生成的 `proposal.md` 中，业务背景和整体验收标准优先引用 DOP 需求内容（结合 `summary`、`description` 与 `storyAC`）。
+   - 在当前变更初始化状态时记录关联的 `change_id`，并在本地元数据中标记 `dop_status: "spec-in-progress"`（真实 dop CLI 没有 update 子命令，进度由本地元数据记录）。
 
 **立即执行：** 使用 Skill 工具加载 `openspec-explore` 技能。禁止跳过此步骤。
 

@@ -111,6 +111,8 @@ comet resume-probe . --stdin --json
 - 用户明确描述为可收敛为单一 OpenSpec change 的轻量/中等变更，需通过 OpenSpec apply 执行，且不需要完整 `/comet-classic` 深度设计/plan → 倾向 `tweak`
 - 文案、配置、文档、prompt 或单一 OpenSpec change 的轻中量修改 → 倾向 `tweak`
 - 新增 capability、public API、schema 变更、跨模块协调或架构调整 → 倾向 `full`
+- 用户输入若匹配 `^[A-Z]{2,6}\d+$`（如 `ARD123456`），槽位提取时填入 `slots.change_id`，作为调用 `/comet-open` 拉取 DOP 需求详情的凭据
+- Classic 模式在流程起止阶段支持企业集成能力：开始阶段通过 `iam auth status --json` 验证凭证（未授权提示 `iam auth login` 并停止），通过 `dop change view <change-id> --json` 自动融入需求上下文；结束阶段交付 PR 后通过 `dop change done <change-id>` 完成外部工作流闭环
 - 多个 active change 且用户未明确 change → `ask_user`
 - 置信度不足、关键 evidence 缺失或用户显式 workflow 与风险信号冲突 → `ask_user`
 

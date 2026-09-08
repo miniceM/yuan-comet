@@ -32,6 +32,17 @@ comet state check <name> archive
 
 若上述 `select` / `check` 输出 `BLOCKED`，且原因是 `bound_branch` 与当前分支不一致，立即按 `comet-classic/reference/decision-point.md` 暂停，让用户单选：切回绑定分支后重新运行入口验证，或在用户明确确认当前分支应接管该 change 后运行 `comet state rebind <change-name>` 并重新入口验证。不得自行切换分支，不得自行换绑。
 
+### 0c. 企业身份认证检查（iam 校验）
+
+在进入归档确认与提交处理前，执行企业身份认证检查：
+
+```bash
+iam auth status --json
+```
+
+- 解析返回结果：`credentials` 列表必须非空，且每一项凭证状态均为 `logged`（需包含 devops 及代码仓库凭证）。
+- **未授权处理**：若返回未登录、凭证不足或命令执行失败，输出提示（建议运行 `iam auth login` 完成登录），并**立即停止流程**，确保归档提交与后续推送/PR 操作具备合法凭证。
+
 ### 1. 归档与交付前最终确认（阻塞点）
 
 入口验证通过后，先读取 `comet state get <change-name> isolation`，再**按 `comet-classic/reference/decision-point.md` 的协议暂停并等待用户确认是否立即归档，以及如何处理归档提交**。不得在用户确认前运行 `comet state transition <change-name> archive-confirm` 或 `comet archive "<change-name>"`。
@@ -62,6 +73,8 @@ comet state transition <change-name> archive-confirm
 如 transition 返回非零退出码，报告错误并停止。只有 transition 成功后，才允许继续 Step 2。用户选择 D「需要调整或重新验证」后，必须先执行 `archive-reopen` 状态回退，不得手动编辑 `.comet.yaml`。用户选择 E「暂不归档」后直接停止，不得归档、提交、推送或把 `branch_status` 设为 `handled`。
 
 ### 2. 执行归档
+
+若当前 change 关联了外部 DOP 变更（存在 `change_id`），在调用 `comet archive` 移动目录前，在变更元数据中记录 pending 的 DOP 完成状态：`dop_completion: { status: 'pending', prepared_at: <ISO timestamp> }`。
 
 运行归档脚本：
 
@@ -130,6 +143,22 @@ git commit -m "chore: archive <change-name>"
 - C「确认归档、立即推送并创建 PR」：先推送当前绑定分支一次，再通过已配置的 GitHub 集成创建 PR；Step 1 的明确选择就是创建 PR 的授权，不得再次改成其他分支处置方式。
 
 用户选择 B 或 C 后，push 失败时报告错误，保留 current selection 记录，不得清除选择或宣告完成；当前任务中只重试同一个 push。PR 创建失败时分支已经包含完整归档提交，报告错误并保留 current selection 记录；当前任务中只重试创建 PR。不得在失败后自动切换、删除、变基或改写分支。
+
+#### 5.1 流程结束阶段的 DOP 状态衔接
+
+当归档提交已成功交付（若用户选择 C「确认归档、立即推送并创建 PR」，必须在 PR 创建成功且获得 PR URL 之后；若选择 A 或 B 且存在外部 DOP 关联）：
+1. 检查当前变更元数据中是否包含关联的外部 `change_id`。
+2. 若存在 `change_id`，调用外部完成命令：
+   ```bash
+   dop change done <change-id>
+   ```
+3. **结果处理与容错规则**：
+   - **执行成功**：保持元数据记录，输出 PR URL 以及 DOP 变更完成提示（`status: done`）。
+   - **执行失败（网络超时、接口异常或权限不足等）**：
+     - **绝不撤销已创建的 PR，也绝不回滚 git 提交或已合并归档的 spec**；
+     - 保持元数据中的 `dop_completion.status: pending` 不变；
+     - 向用户输出 PR URL、具体的失败原因摘要，并提供明确的重试指引（提示用户可通过手动运行 `dop change done <change-id>` 重试完成）；
+     - 此时不宣告外部 DOP 工作流全部完成，明确提示外部 DOP 处于待补救/重试状态。
 
 用户选择 A 时，唯一归档提交成功即表示所选处理方式完成；用户选择 B 或 C 时，必须等待所选远端操作全部成功。只有所选处理方式完成后，才运行 `comet state clear-selection` 并宣告 Classic workflow 完成。
 
