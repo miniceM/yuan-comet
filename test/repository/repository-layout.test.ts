@@ -87,6 +87,7 @@ describe('repository layout registry', () => {
       'comet-plugin',
       'dashboard',
       'engine',
+      'enterprise-cli',
       'enterprise-guard',
       'eval',
       'factory',

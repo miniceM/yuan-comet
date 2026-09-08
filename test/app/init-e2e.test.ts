@@ -88,6 +88,16 @@ function mockExternalSuccess(options: { openSpecConfig?: 'healthy' | 'missing' |
     const cmd = String(command);
     const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
 
+    if (cmd === 'iam' && cmdArgs[0] === '--help') {
+      return Buffer.from('IAM CLI\nAvailable Commands:\n  auth Authenticate with IAM\n');
+    }
+    if (cmd === 'dop' && cmdArgs[0] === '--help') {
+      return Buffer.from('DOP CLI\nAvailable Commands:\n  change Manage system changes\n');
+    }
+    if (cmd === 'gh' && cmdArgs[0] === '--version') {
+      return Buffer.from('gh version gitee-cli 1.0.6\n');
+    }
+
     if (
       (cmd === 'npx' || cmd === 'npx.cmd') &&
       cmdArgs[0] === 'skills' &&
@@ -177,6 +187,7 @@ describe('comet init E2E', () => {
     vi.resetAllMocks();
     vi.resetModules();
     vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmpDir, 'fake-home'));
+    mockExternalSuccess();
   });
 
   afterEach(async () => {
@@ -3070,6 +3081,16 @@ describe('comet init E2E', () => {
       mockedExecFileSync.mockImplementation((command: unknown, args?: unknown) => {
         const cmd = String(command);
         const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
+
+        if (cmd === 'iam' && cmdArgs[0] === '--help') {
+          return Buffer.from('IAM CLI auth\n');
+        }
+        if (cmd === 'dop' && cmdArgs[0] === '--help') {
+          return Buffer.from('DOP CLI change\n');
+        }
+        if (cmd === 'gh' && cmdArgs[0] === '--version') {
+          return Buffer.from('gh version gitee-cli 1.0.6\n');
+        }
 
         if ((cmd === 'which' || cmd === 'where') && cmdArgs[0] === 'openspec') {
           return Buffer.from('/usr/bin/openspec');
