@@ -14,7 +14,7 @@
   "files": {
     "gateway": {
       "fileName": "comet-enterprise-gateway.mjs",
-      "sha256": "34144a6c4fdc2d7049c367d20e42ecda35f8a6bdc516ea1325112c57154e14f5",
+      "sha256": "7ca187e198efc4315bc9d916710bff11460abdf687111fdb7a6141a4ead44e4a",
       "executable": true
     },
     "gitBoundary": {
@@ -29,7 +29,7 @@
     },
     "opencodePlugin": {
       "fileName": "comet-enterprise-guard.mjs",
-      "sha256": "fc7c4b002e12d0b47be30e1cb23ed1d9770cbc5b044423aa17b8f80d70650681",
+      "sha256": "36b66ed6ab50230f9b9626070185637f4fb59d0c1cd10d493a08ee96b5c77fc1",
       "executable": false
     }
   }
