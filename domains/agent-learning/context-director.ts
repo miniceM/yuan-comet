@@ -415,6 +415,13 @@ export class ContextDirector {
     const manifest: AgentContextManifestItem[] = [];
     const applications: AgentContextApplicationRecord[] = [];
     const budget = positive(request.charBudget, this.defaultCharBudget);
+    const expandHint = [
+      'comet task "<project-root>" --task "<original task>"',
+      ...(request.path === undefined ? [] : ['--path "<original path>"']),
+      ...(request.phase === undefined ? [] : ['--phase "<original phase>"']),
+      ...(request.operation === undefined ? [] : ['--operation "<original operation>"']),
+      '--expand-context <id>',
+    ].join(' ');
     const appliedAt = this.now().toISOString();
     for (const entry of ranked) {
       const { candidate, whyApplied } = entry;
@@ -448,7 +455,7 @@ export class ContextDirector {
           nextCore,
           nextPolicies,
           nextManifest,
-          'comet task --expand-context <id>',
+          expandHint,
           [...applications, application],
           budget >= 1500,
         );
@@ -462,7 +469,6 @@ export class ContextDirector {
       if (fullDelivery && attempt('full')) continue;
       if ([320, 160, 80, 32, 0].some((limit) => attempt('manifest', limit))) continue;
     }
-    const expandHint = 'comet task --expand-context <id>';
     for (const application of applications) {
       await this.applications.append(application);
       delivered.set(
@@ -600,12 +606,12 @@ export function renderAgentContext(
       `<context_manifest>\n${manifest
         .map(
           (item) =>
-            `<item id="${escapeXml(item.expansionId)}"${manifestApplicationAttribute(item, applications)} type="${escapeXml(item.memoryType)}" state="${escapeXml(item.state)}" source="${escapeXml(item.sourceType)}"><title>${escapeXml(item.title)}</title><summary>${escapeXml(item.summary)}</summary><why_applied>${escapeXml(item.whyApplied)}</why_applied></item>`,
+            `<item id="${escapeXml(item.expansionId)}"${manifestApplicationAttribute(item, applications)} type="${escapeXml(item.memoryType)}" state="${escapeXml(item.state)}" source="${escapeXml(item.sourceType)}"><title>${escapeXml(item.title)}</title>${item.summary ? `<summary>${escapeXml(item.summary)}</summary>` : ''}<why_applied>${escapeXml(item.whyApplied)}</why_applied></item>`,
         )
         .join('\n')}\n</context_manifest>`,
     );
   }
-  sections.push(`<expand_hint>${escapeXml(expandHint)}</expand_hint>`);
+  sections.push(`<expand_hint>${escapeXmlText(expandHint)}</expand_hint>`);
   if (
     includeUsageHint &&
     applications.some(
@@ -900,12 +906,11 @@ function digestCandidate(candidate: AgentContextCandidate): string {
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');
+  return escapeXmlText(value).replaceAll('"', '&quot;').replaceAll("'", '&apos;');
+}
+
+function escapeXmlText(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 function positive(value: number | undefined, fallback: number): number {

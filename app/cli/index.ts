@@ -13,6 +13,8 @@ const PUBLIC_CLASSIC_COMMANDS = ['state', 'guard', 'handoff', 'archive'] as cons
 type PublicClassicCommand = (typeof PUBLIC_CLASSIC_COMMANDS)[number];
 
 const program = new Command();
+// Subcommands inherit the exit handler when they are created.
+if (process.argv.includes('--json')) program.exitOverride();
 const collect = (value: string, previous: string[]): string[] => [...previous, value];
 
 program
@@ -433,7 +435,7 @@ program
   )
   .action(async (targetPath = '.', options) => {
     const { doctorCommand } = await import('../commands/doctor.js');
-    await doctorCommand(targetPath, options);
+    process.exitCode = await doctorCommand(targetPath, options);
   });
 
 program
@@ -525,6 +527,7 @@ for (const command of PUBLIC_CLASSIC_COMMANDS) {
   program
     .command(`${command} [args...]`)
     .description(classicDescriptions[command])
+    .helpOption(false)
     .allowUnknownOption()
     .allowExcessArguments()
     .action(async (args: string[]) => {
@@ -967,6 +970,7 @@ async function runCli(): Promise<void> {
 
     await program.parseAsync();
   } catch (error) {
+    if (error instanceof Error && 'exitCode' in error && error.exitCode === 0) return;
     const cancelled = error instanceof Error && error.name === 'ExitPromptError';
     const message = cancelled ? 'Command cancelled by user' : errorMessage(error);
     if (process.argv.includes('--json')) {

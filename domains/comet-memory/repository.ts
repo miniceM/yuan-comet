@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { constants as fsConstants, promises as fs } from 'node:fs';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import { independentGitEnvironment } from '../../platform/process/git-environment.js';
 
 import { withRecoverableFileLock } from '../../platform/fs/plugin-store.js';
 
@@ -219,6 +220,7 @@ export class GitMemorySync implements MemoryGitSync {
       (async (args) => {
         const result = await execFileAsync('git', [...args], {
           cwd: this.root,
+          env: independentGitEnvironment(),
           windowsHide: true,
           maxBuffer: 1024 * 1024,
         });
@@ -229,13 +231,9 @@ export class GitMemorySync implements MemoryGitSync {
   public async sync(): Promise<MemorySyncResult> {
     await fs.mkdir(this.root, { recursive: true });
     try {
-      await this.runCommand(['rev-parse', '--git-dir']);
-    } catch {
-      try {
-        await this.runCommand(['init']);
-      } catch (error) {
-        return failedSync(error, true);
-      }
+      await this.ensureDedicatedRepository();
+    } catch (error) {
+      return failedSync(error, false);
     }
 
     try {
@@ -249,6 +247,56 @@ export class GitMemorySync implements MemoryGitSync {
     }
 
     try {
+      if (await this.hasConflicts()) {
+        return failedSync(
+          new Error('Resolve the memory repository merge conflicts before retrying sync.'),
+          true,
+        );
+      }
+      const localBranch = (
+        await this.runCommand(['symbolic-ref', '--short', 'HEAD'])
+      ).stdout.trim();
+      const remoteInfo = (
+        await this.runCommand(['ls-remote', '--symref', this.remoteName, 'HEAD', 'refs/heads/*'])
+      ).stdout;
+      const branches = [...remoteInfo.matchAll(/^[0-9a-f]+\s+refs\/heads\/(.+)$/gmu)].map(
+        (match) => match[1],
+      );
+      const defaultBranch = /^ref: refs\/heads\/(.+)\s+HEAD$/mu.exec(remoteInfo)?.[1];
+      let upstream: string | undefined;
+      try {
+        const value = (
+          await this.runCommand([
+            'rev-parse',
+            '--abbrev-ref',
+            '--symbolic-full-name',
+            '@{upstream}',
+          ])
+        ).stdout.trim();
+        if (value.startsWith(`${this.remoteName}/`))
+          upstream = value.slice(this.remoteName.length + 1);
+      } catch {
+        // A first-time client does not have an upstream yet.
+      }
+      const branch =
+        upstream ??
+        (defaultBranch && branches.includes(defaultBranch)
+          ? defaultBranch
+          : branches.includes(localBranch)
+            ? localBranch
+            : branches.length === 1
+              ? branches[0]
+              : branches.length === 0
+                ? localBranch
+                : undefined);
+      if (!branch)
+        throw new Error(
+          'Memory remote has multiple branches and no default branch. Configure an upstream before syncing.',
+        );
+      const remoteRef = `refs/remotes/${this.remoteName}/${branch}`;
+      if (branches.includes(branch)) {
+        await this.runCommand(['fetch', this.remoteName, `refs/heads/${branch}:${remoteRef}`]);
+      }
       const paths: string[] = [];
       for (const candidate of ['profile.md', '.comet/runtime/memory-state.json']) {
         try {
@@ -264,31 +312,73 @@ export class GitMemorySync implements MemoryGitSync {
       } catch {
         // The project memory directory is optional until the first project memory exists.
       }
-      if (paths.length === 0) {
+      if (paths.length === 0 && branches.length === 0) {
         return { status: 'local-only', retryable: false, message: 'No memory files exist yet' };
       }
-      await this.runCommand(['add', '--', ...paths]);
-      const status = await this.runCommand(['status', '--porcelain', '--', ...paths]);
-      if (status.stdout.trim().length > 0)
-        await this.runCommand(['commit', '-m', this.commitMessage]);
-      await this.runCommand(['pull', '--rebase', '--autostash', this.remoteName]);
-      await this.runCommand(['push', this.remoteName]);
+      let changed = false;
+      if (paths.length > 0) {
+        await this.runCommand(['add', '--', ...paths]);
+        changed =
+          (await this.runCommand(['status', '--porcelain', '--', ...paths])).stdout.trim().length >
+          0;
+        if (changed)
+          await this.runCommand(['commit', '--only', '-m', this.commitMessage, '--', ...paths]);
+      }
+      if (branches.includes(branch)) {
+        let hasHead = false;
+        try {
+          await this.runCommand(['rev-parse', '--verify', 'HEAD']);
+          hasHead = true;
+        } catch {
+          /* First pull into an unborn branch. */
+        }
+        if (!hasHead) {
+          await this.runCommand(['merge', '--ff-only', remoteRef]);
+        } else {
+          let related = false;
+          try {
+            await this.runCommand(['merge-base', 'HEAD', remoteRef]);
+            related = true;
+          } catch {
+            /* Independently initialized memory repositories. */
+          }
+          await this.runCommand(
+            related
+              ? ['rebase', remoteRef]
+              : ['merge', '--allow-unrelated-histories', '--no-edit', remoteRef],
+          );
+        }
+      }
+      await this.runCommand([
+        'push',
+        '--set-upstream',
+        this.remoteName,
+        `HEAD:refs/heads/${branch}`,
+      ]);
       return {
         status: 'synced',
         retryable: false,
-        ...(status.stdout.trim().length === 0
-          ? { message: 'Memory repository is up to date' }
-          : {}),
+        ...(!changed ? { message: 'Memory repository is up to date' } : {}),
       };
     } catch (error) {
-      return failedSync(error, /conflict|merge|rebase/iu.test(errorMessage(error)));
+      return failedSync(error, await this.hasConflicts());
+    }
+  }
+
+  private async hasConflicts(): Promise<boolean> {
+    try {
+      return (
+        (await this.runCommand(['diff', '--name-only', '--diff-filter=U'])).stdout.trim().length > 0
+      );
+    } catch {
+      return false;
     }
   }
 
   public async remote(): Promise<string | null> {
     await fs.mkdir(this.root, { recursive: true });
+    if (!(await this.isDedicatedRepository())) return null;
     try {
-      await this.runCommand(['rev-parse', '--git-dir']);
       const result = await this.runCommand(['remote', 'get-url', this.remoteName]);
       return result.stdout.trim() || null;
     } catch {
@@ -300,16 +390,33 @@ export class GitMemorySync implements MemoryGitSync {
     const normalized = url.trim();
     if (!normalized) throw new Error('Memory Git remote must not be empty');
     await fs.mkdir(this.root, { recursive: true });
-    try {
-      await this.runCommand(['rev-parse', '--git-dir']);
-    } catch {
-      await this.runCommand(['init']);
-    }
+    await this.ensureDedicatedRepository();
     try {
       await this.runCommand(['remote', 'get-url', this.remoteName]);
       await this.runCommand(['remote', 'set-url', this.remoteName, normalized]);
     } catch {
       await this.runCommand(['remote', 'add', this.remoteName, normalized]);
+    }
+  }
+
+  private async isDedicatedRepository(): Promise<boolean> {
+    try {
+      const result = await this.runCommand(['rev-parse', '--show-toplevel']);
+      const [repositoryRoot, memoryRoot] = await Promise.all([
+        fs.realpath(result.stdout.trim()),
+        fs.realpath(this.root),
+      ]);
+      return path.relative(repositoryRoot, memoryRoot) === '';
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureDedicatedRepository(): Promise<void> {
+    if (await this.isDedicatedRepository()) return;
+    await this.runCommand(['init']);
+    if (!(await this.isDedicatedRepository())) {
+      throw new Error('Personal memory must use its own Git repository root');
     }
   }
 }

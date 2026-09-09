@@ -47,9 +47,11 @@ describe('README assets', () => {
     const packageJson = JSON.parse(await fs.readFile('package.json', 'utf-8')) as {
       engines: { node: string };
     };
-    const match = packageJson.engines.node.match(/^>=(\d+)/);
+    const match = packageJson.engines.node.match(/^\^(\d+)\.(\d+)\.0 \|\| >=(\d+)\.0\.0$/);
     expect(match).not.toBeNull();
     const minimumMajor = match![1];
+    const minimumMinor = match![2];
+    const nextMajor = match![3];
     const [readmeEn, readmeZh, contributingEn, contributingZh] = await Promise.all([
       fs.readFile('README.md', 'utf-8'),
       fs.readFile('README-zh.md', 'utf-8'),
@@ -57,19 +59,27 @@ describe('README assets', () => {
       fs.readFile('CONTRIBUTING-zh.md', 'utf-8'),
     ]);
 
-    expect(readmeEn).toContain(`Node.js ${minimumMajor}+`);
-    expect(readmeZh).toContain(`Node.js ${minimumMajor}+`);
-    expect(contributingEn).toContain(`Node.js \`>=${minimumMajor}\``);
-    expect(contributingZh).toContain(`Node.js \`>=${minimumMajor}\``);
+    expect(readmeEn).toContain(
+      `Node.js ${minimumMajor}.${minimumMinor}+ (${minimumMajor}.x), or ${nextMajor}+`,
+    );
+    expect(readmeZh).toContain(
+      `Node.js ${minimumMajor}.${minimumMinor}+（${minimumMajor}.x），或 ${nextMajor}+`,
+    );
+    const lockfile = JSON.parse(await fs.readFile('package-lock.json', 'utf-8'));
+    const developmentRange = lockfile.packages['node_modules/jsdom'].engines.node;
+    expect(contributingEn).toContain(`Node.js \`${developmentRange}\``);
+    expect(contributingZh).toContain(`Node.js \`${developmentRange}\``);
   });
 
-  it('highlights the current release candidate and links the website changelog', async () => {
+  it('highlights the stable release without retaining prerelease announcements', async () => {
     const readmeEn = await fs.readFile('README.md', 'utf-8');
     const readmeZh = await fs.readFile('README-zh.md', 'utf-8');
 
+    expect(readmeEn).toContain('**Comet 0.4.0 stable release**');
+    expect(readmeZh).toContain('**Comet 0.4.0 正式版**');
     for (const version of ['0.4.0-rc.1', '0.4.0-beta.7', '0.4.0-beta.1', '0.3.9']) {
-      expect(readmeEn).toContain(`**${version}**`);
-      expect(readmeZh).toContain(`**${version}**`);
+      expect(readmeEn).not.toContain(`**${version}**`);
+      expect(readmeZh).not.toContain(`**${version}**`);
     }
     expect(readmeEn).toContain('https://docs.comet.rpamis.com/en/changelog');
     expect(readmeZh).toContain('https://docs.comet.rpamis.com/zh/changelog');

@@ -45,17 +45,16 @@
 让你可以用一个工具链处理需求到归档、中断后恢复，将任意Skill组合得像Comet一样，基于科学的**Rubric**、**Pass@k**、**Pass^k**评分演进你的Skill
 
 > [!IMPORTANT]
-> **0.4.0-rc.1** — Native Supervisor Change 可以把复杂需求拆成**带依赖的子 Change**，让 Codex 多会话或 Claude Code Agent Teams 在**独立 worktree** 中实现、验证并回传结果，再由 Runtime **按依赖顺序集成**并完成父 Change 的**最终验收**。
+> **Comet 0.4.0 正式版** — 相比 0.3.9，本次更新带来 Native 工作流、多 Agent 协作、记忆与知识管理，以及完整的 Skill 创建、分发与评估工具链。
 >
-> RC.1 同时带来可管理的**个人记忆**、**项目知识**与**渐进式上下文**，以及覆盖工作流、Git worktree、记忆、知识和插件设置的**三栏 Dashboard**。Native **Portable State**、**恢复路径**和 **Windows Hook** 体验也得到系统加固。
+> - **面向强模型的 Native 工作流**：确认需求后，由 Agent 自主选择计划、实现、测试与审查方法，Comet 负责状态检查、验收与可恢复归档。Native 与保留 OpenSpec + Superpowers 五阶段方法的 Classic 独立运行，共用配置、状态、Dashboard 和 Eval 入口。
+> - **复杂需求的并行交付**：Supervisor Change 将目标拆成带依赖的子 Change，支持 Codex 多会话或 Claude Code Agent Teams 在独立 worktree 中实现和验证，再按依赖顺序集成，完成父 Change 的最终验收。
+> - **可管理的个人记忆与项目知识**：跨任务保留协作偏好与可复用经验，按当前任务渐进式提供相关上下文。你可以查看、纠正、遗忘或暂停使用；新经验先试用，再依据实际采纳和验证结果积累可信度。
+> - **Skill 创建、分发与评估**：通过 `/comet-any` 组合任意 Skill 并打包分发，用 `comet eval` 结合 Rubric、Pass@k、Pass^k 和 LangSmith 评估效果，让 Skill 的迭代有可比较的依据。
+> - **统一的三栏 Dashboard**：在浏览器中查看 Native 与 Classic 进度、Git worktree、验收结果和归档记录，并管理个人记忆、项目知识与插件设置。
+> - **跨平台运行与中断恢复**：纯 Node.js Runtime 支持 Windows、macOS 和 Linux，不再依赖 Bash/WSL；任务状态保存在项目中，换会话或中断后可以继续，CLI 明确提示下一步和需要用户决定的事项。
 >
-> **0.4.0-beta.7** — 新增**面向强模型、原生且可恢复**的 Native 工作流，Native 与 Classic 通过统一配置、状态、Guard、Dashboard 及 Eval 入口实现独立协作。Eval 对齐实验（16 任务 × 48 次运行，取双方均通过的 41 组配对样本）显示，**总 Token 锐减 76.8%**、**Agent 轮次降 57.4%**、**耗时缩 47.4%**，**pass^3 达 87.5%（+12.5pp）且 pass@3 均为 100%**。
->
-> **0.4.0-beta.1** — Comet 升级为纯 Node runtime（不再依赖 Bash/WSL），并带来三大核心能力：用 `/comet-any` 把**任意** Skill 组合成自定义工作流、用 `comet eval` 评估**任意** Skill 并接入 LangSmith、用 `comet dashboard` 在浏览器中查看每一个 change。
->
-> **0.3.9** — `review_mode: off|standard|thorough` 控制 Build/Verify 自动代码审查并支持项目级默认；init/update 改为可选依赖安装，补齐 CLI 国际化、阶段守护加固和 macOS 可执行权限。
->
-> 详见官网 [Changelog](https://docs.comet.rpamis.com/zh/changelog)；Native 与 0.4.0 Classic 的真实评估见 [基线对比](https://docs.comet.rpamis.com/zh/eval/comet-native-vs-040-experiment)。
+> 已有 Native 与 0.4.0 Classic 对齐实验（16 个任务，每种模式各运行 48 次）中，双方均通过的 41 组配对样本显示：Native **总 Token 减少 76.8%**、**Agent 轮次减少 57.4%**、**耗时减少 47.4%**。完整样本中，Native **pass^3 为 87.5%（提高 12.5 个百分点）**，两种模式的 **pass@3 均为 100%**。实验条件与限制见[评估报告](https://docs.comet.rpamis.com/zh/eval/comet-native-vs-040-experiment)，完整变化见 [Changelog](https://docs.comet.rpamis.com/zh/changelog)。
 
 > Native 与 Classic 不是轻重档位，也不会互相升级。Native 服务于能够自主规划和验证的强模型；Classic 服务于需要完整阶段方法与强约束的场景。
 
@@ -128,7 +127,7 @@ Comet的许多能力都能够在海内外大厂实践中找到相似之处，想
 
 前置要求：
 
-- Node.js 22+
+- Node.js 22.16+（22.x），或 24+
 - npm/npx
 - Git
 

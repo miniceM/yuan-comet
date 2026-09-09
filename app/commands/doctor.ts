@@ -1873,7 +1873,7 @@ interface DoctorOptions {
 export async function doctorCommand(
   targetPath: string,
   options: DoctorOptions = {},
-): Promise<void> {
+): Promise<number> {
   const projectPath = path.resolve(targetPath);
   const scope = options.scope ?? 'auto';
   const context = { homeDir: path.resolve(options.homeDir ?? os.homedir()) };
@@ -1909,7 +1909,7 @@ export async function doctorCommand(
         2,
       ),
     );
-    return;
+    return healthy ? 0 : 1;
   }
 
   console.log(`Comet Doctor (scope: ${scope})\n`);
@@ -1923,4 +1923,5 @@ export async function doctorCommand(
   }
 
   console.log();
+  return healthy ? 0 : 1;
 }
