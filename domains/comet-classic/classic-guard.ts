@@ -1020,6 +1020,11 @@ export const classicGuardCommand: ClassicCommandHandler = withProjectContext(
     const output = new GuardOutput();
     const [change, phase, flag] = args;
     try {
+      if (args.length < 2 || args.length > 3 || (flag !== undefined && flag !== '--apply')) {
+        throw new GuardFailure(
+          'Usage: comet guard <change-name> <open|design|build|verify|archive> [--apply]',
+        );
+      }
       validateChangeName(change);
       if (!phase || !PHASES.includes(phase as (typeof PHASES)[number])) {
         throw new GuardFailure(
@@ -1069,9 +1074,18 @@ export const classicGuardCommand: ClassicCommandHandler = withProjectContext(
       }
       output.stderr.push('');
       output.stderr.push(envelope.summary);
-      output.stderr.push(green('ALL CHECKS PASSED — ready for next phase'));
-      if (flag === '--apply') {
+      if (phase === 'archive') {
+        output.stderr.push(
+          green('ALL CHECKS PASSED — archive completeness verified; no further phase transition.'),
+        );
+      } else if (flag === '--apply') {
+        output.stderr.push(green('ALL CHECKS PASSED — ready for next phase'));
         await applyStateUpdate(output, change, changeDir, phase);
+      } else {
+        output.stderr.push(green('ALL CHECKS PASSED — ready for next phase'));
+        output.stderr.push(
+          `Check only: phase unchanged. To advance, run comet guard ${change} ${phase} --apply`,
+        );
       }
       return output.toResult(0);
     } catch (error) {

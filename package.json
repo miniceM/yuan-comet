@@ -1,6 +1,6 @@
 {
   "name": "@cli-tools/yuan-comet",
-  "version": "0.4.0-rc.6",
+  "version": "0.4.0",
   "description": "Agent Skill Harness For Turning Ideas Into Evaluated Workflows",
   "keywords": [
     "comet",
@@ -107,7 +107,7 @@
     }
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.16.0 || >=24.0.0"
   },
   "devDependencies": {
     "@ant-design/cssinjs": "2.1.2",

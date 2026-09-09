@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { JsonFileTextStore } from '../../../platform/fs/plugin-store.js';
 
 import {
   JsonPluginStateStore,
@@ -76,6 +80,74 @@ function descriptor(
 }
 
 describe('PluginRuntime', () => {
+  it.each(['enable', 'disable'] as const)(
+    'does not undo an uninstall committed before %s acquires its lock',
+    async (action) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'comet-plugin-lifecycle-race-'));
+      try {
+        const storeA = new JsonPluginStateStore(
+          new JsonFileTextStore(path.join(root, 'state.json')),
+        );
+        const createRuntime = (store: JsonPluginStateStore) =>
+          new PluginRuntime({
+            cometVersion: '1.0.0',
+            store,
+            descriptors: [descriptor('memory', 'first-party')],
+          });
+        const a = createRuntime(storeA);
+        const b = createRuntime(
+          new JsonPluginStateStore(new JsonFileTextStore(path.join(root, 'state.json'))),
+        );
+        await a.reconcileFirstParty();
+        const update = storeA.update.bind(storeA);
+        vi.spyOn(storeA, 'update').mockImplementationOnce(async (change) => {
+          await b.uninstall('memory');
+          await update(change);
+        });
+        await expect(a[action]('memory')).rejects.toThrow('Plugin is not installed');
+        expect(await b.get('memory')).toMatchObject({
+          status: 'uninstalled',
+          explicitRemoval: true,
+        });
+        await a.install('memory');
+        expect(await b.get('memory')).toMatchObject({ status: 'enabled', explicitRemoval: false });
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+  it('preserves other projects across independent file stores and concurrent lifecycle writes', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'comet-plugin-concurrent-'));
+    try {
+      const createRuntime = () =>
+        new PluginRuntime({
+          cometVersion: '1.0.0',
+          store: new JsonPluginStateStore(new JsonFileTextStore(path.join(root, 'state.json'))),
+          descriptors: [descriptor('memory', 'first-party', { scopes: ['project'] })],
+        });
+      const a = createRuntime();
+      const b = createRuntime();
+      await Promise.all([a.reconcileFirstParty(), b.reconcileFirstParty()]);
+      await a.disable('memory', { scope: 'project', projectId: 'project-a' });
+      await b.disable('memory', { scope: 'project', projectId: 'project-b' });
+      expect((await a.get('memory'))?.disabledProjects).toEqual(['project-a', 'project-b']);
+      await Promise.all([
+        a.enable('memory', { scope: 'project', projectId: 'project-a' }),
+        b.disable('memory', { scope: 'project', projectId: 'project-c' }),
+        createRuntime().reconcileFirstParty(),
+        createRuntime().update('memory'),
+      ]);
+      expect((await createRuntime().get('memory'))?.disabledProjects).toEqual([
+        'project-b',
+        'project-c',
+      ]);
+      await b.uninstall('memory');
+      await a.reconcileFirstParty();
+      expect(await a.get('memory')).toMatchObject({ status: 'uninstalled', explicitRemoval: true });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
   it('returns after durable capture without waiting for background Reflection', async () => {
     let releaseReflection: (() => void) | undefined;
     const reflectionGate = new Promise<void>((resolve) => {
@@ -177,6 +249,7 @@ describe('PluginRuntime', () => {
   it('persists lifecycle state through a JSON state adapter', async () => {
     let content: string | null = null;
     const file = {
+      withLock: async <T>(operation: () => Promise<T>) => operation(),
       read: async () => content,
       write: async (next: string) => {
         content = next;

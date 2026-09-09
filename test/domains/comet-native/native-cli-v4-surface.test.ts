@@ -767,6 +767,15 @@ Run applicable focused checks.
     ).state.builder_handoff.candidate_id;
     await runnerStep(name, { kind: 'dispatch-verifier', checks: [] });
     const awaitingPassDecision = await runnerStep(name, finalResponse(1, 1, ['A1']));
+    expect(awaitingPassDecision.data?.continuation).toMatchObject({
+      disposition: 'await-user',
+      requiresUserDecision: true,
+      userCommunication: {
+        required: true,
+        message: expect.any(String),
+        suggestedReply: expect.any(String),
+      },
+    });
     const oldAcceptResultAlternative = (
       awaitingPassDecision.data as {
         continuation: {
@@ -1699,5 +1708,62 @@ Run applicable focused checks.
       exitCode: 65,
       error: { code: 'invalid-data', message: expect.stringContaining('missing: A2') },
     });
+  });
+
+  it('replaces acceptance choices with workspace recovery without mutating state', async () => {
+    const name = 'workspace-recovery-output';
+    await prepareBuild(name);
+    await runnerStep(name, builderHandoff(['A1']));
+    await runnerStep(name, { kind: 'dispatch-verifier', checks: [] });
+    const ready = await runnerStep(name, finalResponse(1, 1, ['A1']));
+    const version = (ready.data?.state as { state_version: number }).state_version;
+    execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/wrong-workspace'], {
+      cwd: projectRoot,
+    });
+    const args = [
+      'next',
+      name,
+      '--summary',
+      'Accept',
+      '--accept-result',
+      '--expected-state-version',
+      String(version),
+      '--expected-action',
+      'accept-result',
+      ...projectArgs(),
+    ];
+    const blocked = json(await runNativeCli([...args, '--json']));
+    expect(blocked).toMatchObject({
+      exitCode: 0,
+      data: {
+        state: { state_version: version },
+        recovery: { reason: 'workspace-mismatch' },
+        continuation: {
+          disposition: 'blocked',
+          action: 'repair',
+          commandArgs: null,
+          commandAlternatives: [],
+          requiresUserDecision: false,
+          runnerAction: { kind: 'none' },
+        },
+      },
+    });
+    const text = await runNativeCli(args);
+    expect(text.stdout).toContain('wrong-workspace');
+    expect(text.stdout).toContain(`comet native status ${name} --json`);
+    expect(text.stdout).not.toContain('choose whether to accept');
+  });
+
+  it('explains the legacy-only check command for portable changes', async () => {
+    await prepareBuild('check-guidance');
+    const result = json(
+      await runNativeCli(['check', 'check-guidance', '--json', ...projectArgs()]),
+    );
+    expect(result).toMatchObject({
+      exitCode: 64,
+      error: { message: expect.stringContaining('legacy-only') },
+    });
+    expect(result.error?.message).toContain('comet native status check-guidance --json');
+    expect((await runNativeCli(['check', '--help'])).exitCode).toBe(0);
   });
 });

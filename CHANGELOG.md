@@ -2,7 +2,38 @@
 
 All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
-## What's Changed [0.4.0-rc.6] - 2026-09-08
+## What's Changed [0.4.0] - 2026-09-08
+
+### Changed
+
+- **Node.js compatibility**: Require Node.js 22.16 or later within the 22.x line, or Node.js 24 or later, so supported installations include the APIs required by project knowledge and CLI dependencies.
+
+### Fixed
+
+- **Global initialization**: Preserve configured workflows, the default workflow, and memory and workflow policies when repeating initialization without explicitly replacing them.
+- **Native uninstall**: Clean up empty Native runtime directories, including sequential uninstall of a mixed Native and Classic installation, while preserving user content and active state.
+- **Memory command failures**: Report remote memory retrieval, management, and policy-update failures instead of empty results or false success, while keeping automatic context collection nonblocking.
+- **Context expansion guidance**: Include project and task placeholders, plus applicable path, phase, and operation arguments, so manifest entries can be expanded from the original calling directory with the same task context.
+- **Update language preservation**: Keep English installations in English during updates even when their Skills include Chinese examples, and retain support for Chinese and partially installed Skill sets.
+- **Installation JSON output**: Keep OpenSpec and Superpowers progress on stderr so external tool notices cannot corrupt structured CLI results.
+- **Knowledge discovery**: Preserve Markdown retrieval when a project's parent directory is accessed through a filesystem alias, including macOS temporary directories, while continuing to exclude project-external links.
+- **Plugin settings**: Preserve each project's enabled or disabled state when multiple Dashboard or CLI instances update shared plugin settings, and prevent concurrent enable or disable operations from undoing an uninstall.
+- **Personal Memory**: Allow users to forget global memories created in a project using another language while preserving validation of newly proposed content.
+- **Uninstall status**: Return a failing exit status when current-project or all-projects cleanup is incomplete, including project inspection failures, so automation can reliably detect failures.
+- **Native result confirmation**: Explicitly request the user's decision after a Skill-coordinated verification passes, with clear choices to accept the result, revise the implementation, or adjust requirements.
+- **CLI argument safety and help**: Reject unsupported Classic arguments before execution, document usable public command syntax, and preserve task-context options when resolving workflows.
+- **Workflow recovery guidance**: Report Classic status scan failures instead of empty change lists, stop repeating Native acceptance requests in the wrong workspace, and direct current Native changes away from legacy verification commands.
+- **CLI automation results**: Emit JSON workflow-resolution errors, return a failing exit status for unhealthy Doctor results, and expose Classic workspace results as structured data while retaining the existing output fields.
+- **Memory Git synchronization**: Support the first push to an empty remote and the first connection to an existing memory branch, preserve remote content, and distinguish actual merge conflicts from connection failures.
+- **LangSmith evaluation**: Install the selected suite's Python dependencies automatically and report missing SDKs before running an evaluation without its expected experiment records and scores.
+- **Knowledge command failures**: Show remote service diagnostics instead of presenting outages as empty search results, and return failing exit statuses for unsuccessful knowledge operations and memory synchronization.
+
+### Security
+
+- **Memory repository isolation**: Use a dedicated memory Git repository and isolate inherited repository and index settings, preventing memory operations from changing a parent remote, synchronizing unrelated history, or interfering with commits when invoked from Git hooks.
+- **Dashboard request validation**: Reject untrusted hosts and browser origins, and require JSON for state-changing requests to prevent cross-origin pages from changing local settings.
+
+## What's Changed [0.4.0-rc.6] - 2026-09-07
 
 ### Added
 

@@ -822,6 +822,10 @@ describe('Context Director', () => {
       }),
     ]);
     expect(selection.text).toContain('<agent_context>');
+    expect(selection.text).toContain('<expand_hint>comet task "&lt;project-root&gt;"');
+    expect(selection.expandHint).toBe(
+      'comet task "<project-root>" --task "<original task>" --path "<original path>" --expand-context <id>',
+    );
     expect(selection.text).toContain('模块 &lt;边界&gt;');
     expect(selection.text).toContain('id="project-knowledge::project-model-1"');
     expect(selection.text).not.toContain('<project_knowledge>');
