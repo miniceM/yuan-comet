@@ -113,7 +113,6 @@ Issue、Review 意见、Project Knowledge、Memory 和历史记录只提供调�
 
 - `app/`：CLI 入口、命令编排和用户交互层。只能组合 domain/platform 能力，不承载领域规则。
 - `domains/`：业务领域模块。每个子目录是一个可独立维护的领域模块：
-  - `code-intelligence/`：Codebase Memory MCP 等代码智能集成的安装、配置、索引与诊断。
   - `bundle/`：Skill bundle 打包、兼容性基准、候选筛选
   - `comet-classic/`：Classic workflow runtime（旧版状态机 + Guard）
   - `comet-native/`：Native workflow runtime（新版状态机 + Guard，不依赖外部 Skill）

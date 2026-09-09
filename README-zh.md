@@ -154,10 +154,6 @@ comet init --workflow classic
 comet init --workflow both
 ```
 
-Codebase Memory 是可选集成。普通 `--yes`、`--json` 或首次交互初始化不会自动启用。使用
-`comet init --codebase-memory install` 安装 CLI 并把 MCP 注册到选定 Agent，或使用
-`comet init --codebase-memory init` 只初始化当前项目索引。项目索引按真实路径匹配，全局范围不会索引当前项目，JSON 输出会提供 `codebaseMemory` 诊断信息。
-
 ### 项目配置
 
 `comet init` 会按所选语言生成带逐字段注释的 `.comet/config.yaml`；`comet update` 补齐新增默认值，同时保留用户取值和未知扩展。

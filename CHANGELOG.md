@@ -27,6 +27,7 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 - **Memory Git synchronization**: Support the first push to an empty remote and the first connection to an existing memory branch, preserve remote content, and distinguish actual merge conflicts from connection failures.
 - **LangSmith evaluation**: Install the selected suite's Python dependencies automatically and report missing SDKs before running an evaluation without its expected experiment records and scores.
 - **Knowledge command failures**: Show remote service diagnostics instead of presenting outages as empty search results, and return failing exit statuses for unsuccessful knowledge operations and memory synchronization.
+- **Superpowers project-scoped installation**: Run temporary npm package installations in an isolated temporary directory when extracting project-scoped skills, avoiding conflicts with package manager symlink layouts (such as pnpm virtual store) and preventing host repository filesystem errors.
 
 ### Security
 
@@ -38,7 +39,6 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 ### Added
 
 - **Native specification reference sync**: Correct local Markdown cross-references in confirmed target specs with an audited `comet native spec sync` operation that preserves unaffected acceptance results and schedules affected behavior for verification.
-- **Optional Codebase Memory integration**: `comet init` can explicitly install `codebase-memory-mcp`, register it with selected Agent configurations, and initialize a canonical project index while preserving unrelated MCP entries and existing CodeGraph behavior. `comet doctor` reports CLI, Agent registration, and project-index health separately and can repair only an authorized project index.
 
 ### Changed
 

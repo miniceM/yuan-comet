@@ -81,11 +81,6 @@ import {
   resolveCodegraphCommand,
 } from '../../domains/integrations/codegraph.js';
 import {
-  hasCodebaseMemoryInstallation,
-  setupCodebaseMemory,
-  type CodebaseMemoryAction,
-} from '../../domains/code-intelligence/index.js';
-import {
   ensureEnterpriseCli,
   type EnterpriseCliResult,
 } from '../../domains/enterprise-cli/index.js';
@@ -107,7 +102,6 @@ type InitOptions = {
   artifactRoot?: string;
   platform?: string;
   codegraph?: 'init' | 'skip';
-  codebaseMemory?: Exclude<CodebaseMemoryAction, 'auto'>;
 };
 
 function workflowChoiceNames(lang: string): Array<{
@@ -174,22 +168,13 @@ interface PlatformResult {
   superpowers: InstallStatus;
   comet: InstallStatus;
   codegraph: InstallStatus;
-  codebaseMemory: InstallStatus;
   failures: InitFailureDetail[];
 }
 
 interface InitFailureDetail {
   platform: string;
   platformName: string;
-  component:
-    | 'OpenSpec'
-    | 'Superpowers'
-    | 'Comet'
-    | 'Rule'
-    | 'Hook'
-    | 'CodeGraph'
-    | 'Codebase Memory'
-    | 'Finalization';
+  component: 'OpenSpec' | 'Superpowers' | 'Comet' | 'Rule' | 'Hook' | 'CodeGraph' | 'Finalization';
   reason: string;
 }
 
@@ -328,7 +313,7 @@ function resolveCometAction(hasExisting: boolean, options: InitOptions): Compone
   return resolveAction(hasExisting, options);
 }
 
-type NpmDepId = 'openspec' | 'superpowers' | 'codegraph' | 'codebase-memory';
+type NpmDepId = 'openspec' | 'superpowers' | 'codegraph';
 
 interface NpmDepState {
   id: NpmDepId;
@@ -342,14 +327,13 @@ async function selectNpmDeps(
   options: InitOptions,
   lang: string,
   workflowSelection: InitWorkflowSelection,
-  scope: InstallScope,
+  _scope: InstallScope,
 ): Promise<Set<NpmDepId>> {
   const includesClassic = includesWorkflow(workflowSelection, 'classic');
   const openSpecInstalled = includesClassic && isCommandAvailable('openspec');
   const openSpecRequired = includesClassic && !isOpenSpecCliCompatible();
   const codegraphInstalled =
     hasCodegraphProjectIndex(projectPath) || resolveCodegraphCommand() !== null;
-  const codebaseMemoryInstalled = hasCodebaseMemoryInstallation(projectPath, scope);
   const superpowersInstalled = spPlatformIds.length === 0 ? true : undefined;
 
   const states: NpmDepState[] = [
@@ -360,7 +344,6 @@ async function selectNpmDeps(
         ]
       : []),
     { id: 'codegraph', installed: codegraphInstalled },
-    { id: 'codebase-memory', installed: codebaseMemoryInstalled },
   ];
 
   const depLabel: Record<NpmDepId, (installed: boolean) => string> = {
@@ -370,8 +353,6 @@ async function selectNpmDeps(
       installed ? t(lang, 'npmDepSuperpowersInstalled') : t(lang, 'npmDepSuperpowers'),
     codegraph: (installed) =>
       installed ? t(lang, 'npmDepCodegraphInstalled') : t(lang, 'npmDepCodegraph'),
-    'codebase-memory': (installed) =>
-      installed ? t(lang, 'npmDepCodebaseMemoryInstalled') : t(lang, 'npmDepCodebaseMemory'),
   };
 
   const depHint: Partial<Record<NpmDepId, string>> = {
@@ -387,8 +368,7 @@ async function selectNpmDeps(
     } = {
       name: depLabel[id](installed),
       value: id,
-      checked:
-        id === 'openspec' ? Boolean(required) : id === 'codebase-memory' ? false : !installed,
+      checked: id === 'openspec' ? Boolean(required) : !installed,
     };
     if (depHint[id]) {
       choice.description = depHint[id];
@@ -396,24 +376,9 @@ async function selectNpmDeps(
     return choice;
   });
 
-  if (options.codebaseMemory && options.codebaseMemory !== 'skip') {
-    return new Set([
-      ...(options.yes || options.json
-        ? states
-            .filter((state) => state.id !== 'codebase-memory')
-            .filter((state) => !state.installed || state.required)
-            .map((state) => state.id)
-        : []),
-      'codebase-memory',
-    ]);
-  }
-
   if (options.yes || options.json) {
     return new Set(
-      states
-        .filter((state) => state.id !== 'codebase-memory')
-        .filter((state) => !state.installed || state.required)
-        .map((state) => state.id),
+      states.filter((state) => !state.installed || state.required).map((state) => state.id),
     );
   }
 
@@ -433,8 +398,7 @@ function hasFailure(r: PlatformResult): boolean {
     r.openspec === 'failed' ||
     r.superpowers === 'failed' ||
     r.comet === 'failed' ||
-    r.codegraph === 'failed' ||
-    r.codebaseMemory === 'failed'
+    r.codegraph === 'failed'
   );
 }
 
@@ -443,8 +407,7 @@ function hasInstall(r: PlatformResult): boolean {
     r.openspec === 'installed' ||
     r.superpowers === 'installed' ||
     r.comet === 'installed' ||
-    r.codegraph === 'installed' ||
-    r.codebaseMemory === 'installed'
+    r.codegraph === 'installed'
   );
 }
 
@@ -453,8 +416,7 @@ function isAllSkipped(r: PlatformResult): boolean {
     r.openspec === 'skipped' &&
     r.superpowers === 'skipped' &&
     r.comet === 'skipped' &&
-    r.codegraph === 'skipped' &&
-    r.codebaseMemory === 'skipped'
+    r.codegraph === 'skipped'
   );
 }
 
@@ -472,7 +434,6 @@ function displaySummary(
     ['superpowers', 'Superpowers'],
     ['comet', 'Comet'],
     ['codegraph', 'CodeGraph'],
-    ['codebaseMemory', 'Codebase Memory'],
   ];
   const failedDetails = (result: PlatformResult) =>
     componentStatuses
@@ -563,9 +524,6 @@ export async function initCommand(
   const scope = await selectScope(options, lang);
   if (scope === 'global' && options.codegraph === 'init') {
     throw new Error('--codegraph init is only valid for project-scope initialization');
-  }
-  if (scope === 'global' && options.codebaseMemory === 'init') {
-    throw new Error('--codebase-memory init is only valid for project-scope initialization');
   }
   if (scope === 'project') {
     await readProjectRegistry({ strict: true });
@@ -828,7 +786,6 @@ export async function initCommand(
   const shouldInstallOpenSpecCli = selectedNpmDeps.has('openspec');
   const shouldInstallSuperpowers = selectedNpmDeps.has('superpowers');
   const shouldInstallCodegraphCli = selectedNpmDeps.has('codegraph');
-  const shouldInstallCodebaseMemory = selectedNpmDeps.has('codebase-memory');
   const requiresClassicArtifactRoot =
     scope === 'project' &&
     workflowDecision !== null &&
@@ -1122,7 +1079,6 @@ export async function initCommand(
       superpowers: plan.spAction !== 'skip' ? spGlobalStatus : 'skipped',
       comet: cmStatus,
       codegraph: 'skipped',
-      codebaseMemory: 'skipped',
       failures: [
         ...((osToolIds.includes(platform.openspecToolId) || requiresClassicArtifactRoot) &&
         osGlobalStatus === 'failed'
@@ -1200,61 +1156,6 @@ export async function initCommand(
     log('\n  CodeGraph: skipped (existing .codegraph index detected)');
   } else if (!options.json) {
     log(`\n  CodeGraph: ${t(lang, 'cgSkippedByUser')}`);
-  }
-
-  const requestedCodebaseMemoryAction: Exclude<CodebaseMemoryAction, 'auto'> | undefined =
-    options.codebaseMemory ?? (shouldInstallCodebaseMemory ? ('install' as const) : undefined);
-  const codebaseMemory = requestedCodebaseMemoryAction
-    ? await setupCodebaseMemory({
-        projectPath,
-        scope,
-        action: requestedCodebaseMemoryAction,
-        platformIds: selectedPlatformIds,
-        quiet: options.json === true,
-      })
-    : await setupCodebaseMemory({
-        projectPath,
-        scope,
-        action: 'skip',
-        platformIds: selectedPlatformIds,
-        quiet: options.json === true,
-      });
-
-  if (!options.json && requestedCodebaseMemoryAction) {
-    log(`\n  ${t(lang, 'installingCBM')}`);
-    log(`  Codebase Memory CLI: ${codebaseMemory.cliStatus}`);
-    log(
-      `  Codebase Memory MCP: ${
-        codebaseMemory.agents.length === 0
-          ? lang === 'zh'
-            ? '未写入 Agent 配置'
-            : 'no Agent configuration changed'
-          : codebaseMemory.agents.map((agent) => `${agent.name}: ${agent.status}`).join('; ')
-      }`,
-    );
-    log(`  Codebase Memory project index: ${codebaseMemory.indexStatus}`);
-  }
-  for (const result of results) {
-    result.codebaseMemory = requestedCodebaseMemoryAction ? codebaseMemory.status : 'skipped';
-  }
-  if (requestedCodebaseMemoryAction) {
-    for (const agent of codebaseMemory.agents.filter((entry) => entry.status !== 'registered')) {
-      const result = results.find((entry) => entry.platform.id === agent.platform) ?? results[0];
-      result?.failures.push({
-        platform: result.platform.id,
-        platformName: result.platform.name,
-        component: 'Codebase Memory',
-        reason: `${agent.name}: ${agent.detail}`,
-      });
-    }
-  }
-  if (requestedCodebaseMemoryAction && codebaseMemory.failures.length > 0 && results[0]) {
-    results[0].failures.push({
-      platform: results[0].platform.id,
-      platformName: results[0].platform.name,
-      component: 'Codebase Memory',
-      reason: codebaseMemory.failures.join('; '),
-    });
   }
 
   const codegraph =
@@ -1535,7 +1436,6 @@ export async function initCommand(
           enterpriseCli,
           nextActions: enterpriseCli.nextActions,
           codegraph,
-          codebaseMemory,
           results: results.map((result) => ({
             platform: result.platform.id,
             platformName: result.platform.name,
@@ -1543,7 +1443,6 @@ export async function initCommand(
             superpowers: result.superpowers,
             comet: result.comet,
             codegraph: result.codegraph,
-            codebaseMemory: result.codebaseMemory,
           })),
           workingDirsCreated,
         },

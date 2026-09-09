@@ -1943,13 +1943,13 @@ describe('comet init E2E', () => {
   );
 
   it.each([
-    { workflow: 'native' as const, expected: ['codegraph', 'codebase-memory'] },
+    { workflow: 'native' as const, expected: ['codegraph'] },
     {
       workflow: 'both' as const,
-      expected: ['openspec', 'superpowers', 'codegraph', 'codebase-memory'],
+      expected: ['openspec', 'superpowers', 'codegraph'],
     },
   ])(
-    'offers CodeGraph and optional Codebase Memory dependencies for $workflow initialization',
+    'offers CodeGraph dependencies for $workflow initialization',
     async ({ workflow, expected }) => {
       mockExternalSuccess();
       await fs.mkdir(path.join(tmpDir, '.codex'), { recursive: true });
