@@ -169,6 +169,21 @@ describe('superpowers', () => {
       expect(mockedExecFileSync.mock.calls[0][2]).toMatchObject({ timeout: 300_000 });
     });
 
+    it('executes project-scope installation in an isolated temporary directory rather than projectPath', async () => {
+      mockedExecFileSync.mockReturnValueOnce(Buffer.from('installed'));
+
+      const { installSuperpowersForPlatforms } =
+        await import('../../../domains/integrations/superpowers.js');
+      const projectPath = '/tmp/fake-pnpm-project';
+      const result = await installSuperpowersForPlatforms(projectPath, 'project', ['claude']);
+
+      expect(result).toBe('installed');
+      const executionCwd = (mockedExecFileSync.mock.calls[0][2] as { cwd?: string })?.cwd;
+      expect(executionCwd).toBeDefined();
+      expect(executionCwd).not.toBe(projectPath);
+      expect(executionCwd).toContain('comet-skills-cli-superpowers-');
+    });
+
     it('does not include the user-level using-superpowers skill in standard skills list', async () => {
       const { SUPERPOWERS_SKILL_NAMES } =
         await import('../../../domains/integrations/superpowers.js');

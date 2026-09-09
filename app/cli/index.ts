@@ -33,13 +33,6 @@ program
   .addOption(
     new Option('--codegraph <action>', 'Project CodeGraph index action').choices(['init', 'skip']),
   )
-  .addOption(
-    new Option('--codebase-memory <action>', 'Codebase Memory MCP action').choices([
-      'install',
-      'init',
-      'skip',
-    ]),
-  )
   .addOption(new Option('--scope <scope>', 'Install scope').choices(['global', 'project']))
   .addOption(new Option('--language <lang>', 'Language for skills').choices(['en', 'zh']))
   .addOption(

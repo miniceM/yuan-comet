@@ -221,7 +221,6 @@ domains/             # 业务领域模块
 ├── engine/          # 通用执行引擎（loop / state / guardrails / evals）
 ├── eval/            # comet eval 评测
 ├── factory/         # Skill 创作工厂产物打包
-├── code-intelligence/ # Codebase Memory MCP 安装、配置、索引与诊断
 ├── integrations/    # 第三方集成（openspec / superpowers / codegraph）
 ├── project-knowledge/ # Comet 管理的项目文档本地/远端召回
 ├── skill/           # Skill 安装、发现、偏好、snapshot

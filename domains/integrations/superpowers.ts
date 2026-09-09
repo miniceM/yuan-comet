@@ -495,17 +495,23 @@ async function installSuperpowersForPlatforms(
 
   if (skillsCliPlatformIds.length > 0) {
     const command = buildSuperpowersInstallCommand(projectPath, scope, skillsCliPlatformIds);
+    const baseDir = scope === 'global' ? os.homedir() : projectPath;
+    const isProjectScope = scope === 'project';
+    const tempDir = isProjectScope
+      ? await mkdtemp(path.join(os.tmpdir(), 'comet-skills-cli-superpowers-'))
+      : null;
 
     try {
       execFileSync(command.command, command.args, {
-        cwd: projectPath,
+        cwd: tempDir ?? baseDir,
         stdio: ['inherit', 2, 'inherit'],
         timeout: SUPERPOWERS_INSTALL_TIMEOUT_MS,
         shell: process.platform === 'win32',
       });
 
-      const baseDir = scope === 'global' ? os.homedir() : projectPath;
-      const srcSkillsDir = await findSuperpowersSkillsDir([projectPath, baseDir]);
+      const srcSkillsDir = await findSuperpowersSkillsDir(
+        tempDir ? [tempDir, projectPath, baseDir] : [projectPath, baseDir],
+      );
       if (srcSkillsDir) {
         for (const platformId of skillsCliPlatformIds) {
           const platform = PLATFORMS.find((p) => p.id === platformId);
@@ -526,6 +532,10 @@ async function installSuperpowersForPlatforms(
       console.error(`    Superpowers install failed: ${(error as Error).message}`);
       printCommandErrorDetails(error);
       failed = true;
+    } finally {
+      if (tempDir) {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     }
   }
 

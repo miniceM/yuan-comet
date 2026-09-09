@@ -54,9 +54,6 @@ export type TranslationKey =
   | 'npmDepSuperpowersHint'
   | 'npmDepCodegraph'
   | 'npmDepCodegraphInstalled'
-  | 'npmDepCodebaseMemory'
-  | 'npmDepCodebaseMemoryInstalled'
-  | 'installingCBM'
   | 'npmDepNotInstalled'
   | 'updateTitle'
   | 'updatingNpmPackage'
@@ -196,10 +193,6 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     npmDepSuperpowersHint: 'v6.0.0+ recommended — ~2× faster, ~50% fewer tokens',
     npmDepCodegraph: 'CodeGraph CLI (@colbymchenry/codegraph)',
     npmDepCodegraphInstalled: 'CodeGraph CLI (already installed — upgrade to latest)',
-    npmDepCodebaseMemory: 'codebase-memory-mcp (optional code intelligence MCP)',
-    npmDepCodebaseMemoryInstalled:
-      'codebase-memory-mcp (already installed — select to configure this Agent)',
-    installingCBM: 'Installing codebase-memory-mcp...',
     npmDepNotInstalled: 'not installed',
     updateTitle: 'Comet Update',
     updatingNpmPackage: 'Updating npm package',
@@ -345,9 +338,6 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     npmDepSuperpowersHint: '推荐 v6.0.0+ — 速度快约 2 倍，节省约 50% token',
     npmDepCodegraph: 'CodeGraph CLI (@colbymchenry/codegraph)',
     npmDepCodegraphInstalled: 'CodeGraph CLI（已安装 — 升级到最新版本）',
-    npmDepCodebaseMemory: 'codebase-memory-mcp（可选代码智能 MCP）',
-    npmDepCodebaseMemoryInstalled: 'codebase-memory-mcp（已安装 — 选择后配置当前 Agent）',
-    installingCBM: '正在安装 codebase-memory-mcp...',
     npmDepNotInstalled: '未安装',
     updateTitle: 'Comet 更新',
     updatingNpmPackage: '正在更新 npm 包',

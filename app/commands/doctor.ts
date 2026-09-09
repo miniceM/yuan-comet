@@ -17,12 +17,6 @@ import {
   type CodegraphIntegrationDiagnostic,
 } from '../../domains/integrations/codegraph.js';
 import {
-  codebaseMemoryCheckResults,
-  inspectCodebaseMemoryIntegration,
-  repairCodebaseMemoryIndex,
-  type CodebaseMemorySetupDiagnostic,
-} from '../../domains/code-intelligence/index.js';
-import {
   copyCometRulesForPlatform,
   readManifest,
   getAssetsDir,
@@ -114,7 +108,6 @@ interface DoctorReport {
   results: CheckResult[];
   runtime: DoctorRuntimeDiagnostic;
   codegraph: CodegraphIntegrationDiagnostic | null;
-  codebaseMemory: CodebaseMemorySetupDiagnostic | null;
 }
 
 const SUPERPOWERS_SENTINELS = [
@@ -1573,12 +1566,6 @@ async function collectResultsWithContext(
     context.homeDir,
   );
   results.push(...codegraphCheckResults(codegraph));
-  const codebaseMemory = inspectCodebaseMemoryIntegration(
-    projectPath,
-    scope === 'global' ? 'global' : 'project',
-    context.homeDir,
-  );
-  results.push(...codebaseMemoryCheckResults(codebaseMemory));
   if (classicEnabled && !configError && config && workflows.includes('classic')) {
     results.push(...(await checkCometYamlValidity(projectPath)));
   }
@@ -1593,7 +1580,7 @@ async function collectResultsWithContext(
         : await checkCurrentSelection(projectPath),
     );
   }
-  return { results, runtime, codegraph, codebaseMemory };
+  return { results, runtime, codegraph };
 }
 
 async function checkCurrentSelection(projectPath: string): Promise<CheckResult> {
@@ -1848,10 +1835,6 @@ async function repairDoctorState(
       repaired.push('CodeGraph project index');
     }
   }
-  if (repairCodegraph && scope !== 'global') {
-    const result = await repairCodebaseMemoryIndex(projectPath, quietCodegraph);
-    if (result.repaired) repaired.push('Codebase Memory project index');
-  }
   return repaired;
 }
 
@@ -1897,17 +1880,13 @@ export async function doctorCommand(
     options.homeDir === undefined
       ? await collectResults(projectPath, scope)
       : await collectResultsWithContext(projectPath, scope, context);
-  const { results, runtime, codegraph, codebaseMemory } = report;
+  const { results, runtime, codegraph } = report;
   const healthy = results.every((result) => result.status !== 'fail');
   const status = healthy ? 'passed' : 'failed';
 
   if (options.json) {
     console.log(
-      JSON.stringify(
-        { scope, status, healthy, repaired, runtime, codegraph, codebaseMemory, results },
-        null,
-        2,
-      ),
+      JSON.stringify({ scope, status, healthy, repaired, runtime, codegraph, results }, null, 2),
     );
     return healthy ? 0 : 1;
   }
