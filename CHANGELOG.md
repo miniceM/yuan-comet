@@ -10,6 +10,7 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ### Fixed
 
+- **OpenCode Enterprise Guard tool interception**: Avoid blocking non-mutating tools like `skill` and `question` as unknown mutating tools, auditing only command execution and file mutations while fast-pathing out-of-scope tools in the OpenCode plugin entry.
 - **Global initialization**: Preserve configured workflows, the default workflow, and memory and workflow policies when repeating initialization without explicitly replacing them.
 - **Native uninstall**: Clean up empty Native runtime directories, including sequential uninstall of a mixed Native and Classic installation, while preserving user content and active state.
 - **Memory command failures**: Report remote memory retrieval, management, and policy-update failures instead of empty results or false success, while keeping automatic context collection nonblocking.
