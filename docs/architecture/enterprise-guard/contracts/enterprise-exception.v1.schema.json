@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/miniceM/comet/docs/architecture/enterprise-guard/contracts/enterprise-exception.v1.schema.json",
+  "title": "Enterprise Guard Exception v1",
+  "description": "A protected, time-bounded exception record. It is an external policy artifact, never a free-form instruction inside a command, prompt, commit message, or write payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "exceptionId",
+    "ruleId",
+    "scope",
+    "reason",
+    "owner",
+    "expiresAt",
+    "approval",
+    "ci",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "comet.enterprise-exception.v1"
+    },
+    "exceptionId": {
+      "type": "string",
+      "pattern": "^EGE-[A-Z0-9-]+$"
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^EG-(HARD|SOFT)-[A-Z]+-[0-9]{3}$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {
+          "enum": ["path", "branch", "repository", "command"]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "*"
+          }
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 500
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeId", "approvedBy", "approvedAt", "protectedRef"],
+      "properties": {
+        "changeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approvedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approvedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "protectedRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "runId", "conclusion", "protectedRef"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conclusion": {
+          "const": "passed"
+        },
+        "protectedRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "status": {
+      "enum": ["active", "revoked", "expired"]
+    }
+  }
+}

@@ -25,6 +25,14 @@ async function snapshotTree(root: string): Promise<string[]> {
   return entries;
 }
 
+async function getInstalledPackageDir(consumer: string): Promise<string> {
+  const packageJson = JSON.parse(
+    await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'),
+  ) as { name: string };
+  const parts = packageJson.name.startsWith('@') ? packageJson.name.split('/') : [packageJson.name];
+  return path.join(consumer, 'node_modules', ...parts);
+}
+
 async function installWorkloadSentinels(root: string) {
   const marker = path.join(root, 'sentinel.log');
   const bin = path.join(root, 'sentinel-bin');
@@ -160,17 +168,11 @@ describe('packaged static collect', () => {
     const skill = path.join(owner, 'skill');
     await fs.mkdir(skill);
     await fs.writeFile(path.join(skill, 'SKILL.md'), '# Temporary skill\n', 'utf8');
+    const cli = path.join(await getInstalledPackageDir(consumer), 'bin', 'comet.js');
 
     const result = spawnSync(
       process.execPath,
-      [
-        path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js'),
-        'eval',
-        skill,
-        '--collect',
-        '--project',
-        owner,
-      ],
+      [cli, 'eval', skill, '--collect', '--project', owner],
       {
         cwd: owner,
         encoding: 'utf8',
@@ -203,14 +205,7 @@ describe('packaged static collect', () => {
     );
     const malformed = spawnSync(
       process.execPath,
-      [
-        path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js'),
-        'eval',
-        manifest,
-        '--collect',
-        '--project',
-        owner,
-      ],
+      [cli, 'eval', manifest, '--collect', '--project', owner],
       { cwd: owner, encoding: 'utf8', env: isolatedEnv },
     );
     expect(malformed.status).not.toBe(0);
@@ -219,16 +214,7 @@ describe('packaged static collect', () => {
 
     const invalidExplicit = spawnSync(
       process.execPath,
-      [
-        path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js'),
-        'eval',
-        skill,
-        '--collect',
-        '--task',
-        'not-a-task',
-        '--project',
-        owner,
-      ],
+      [cli, 'eval', skill, '--collect', '--task', 'not-a-task', '--project', owner],
       { cwd: owner, encoding: 'utf8', env: isolatedEnv },
     );
     expect(invalidExplicit.status).not.toBe(0);
@@ -251,14 +237,7 @@ describe('packaged static collect', () => {
     );
     const sourceCollected = spawnSync(
       process.execPath,
-      [
-        path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js'),
-        'eval',
-        manifest,
-        '--collect',
-        '--project',
-        owner,
-      ],
+      [cli, 'eval', manifest, '--collect', '--project', owner],
       { cwd: owner, encoding: 'utf8', env: isolatedEnv },
     );
     expect(sourceCollected.status, `${sourceCollected.stdout}\n${sourceCollected.stderr}`).toBe(0);
@@ -286,14 +265,7 @@ describe('packaged static collect', () => {
 
     const cached = spawnSync(
       process.execPath,
-      [
-        path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js'),
-        'eval',
-        skill,
-        '--collect',
-        '--project',
-        owner,
-      ],
+      [cli, 'eval', skill, '--collect', '--project', owner],
       { cwd: owner, encoding: 'utf8', env: { ...isolatedEnv, UV_OFFLINE: '1', UV_NO_SYNC: '1' } },
     );
     expect(cached.status, `${cached.stdout}\n${cached.stderr}`).toBe(0);
@@ -314,14 +286,7 @@ describe('packaged static collect', () => {
     await fs.writeFile(metadata, '{"generation_hash":"mismatch"}\n', 'utf8');
     const corrupt = spawnSync(
       process.execPath,
-      [
-        path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js'),
-        'eval',
-        skill,
-        '--collect',
-        '--project',
-        owner,
-      ],
+      [cli, 'eval', skill, '--collect', '--project', owner],
       { cwd: owner, encoding: 'utf8', env: isolatedEnv },
     );
     expect(corrupt.status, `${corrupt.stdout}\n${corrupt.stderr}`).toBe(0);
@@ -371,7 +336,8 @@ describe('packaged static collect', () => {
     const skill = path.join(owner, 'skill');
     await fs.mkdir(skill);
     await fs.writeFile(path.join(skill, 'SKILL.md'), '# Sentinel skill\n', 'utf8');
-    const harnessRoot = path.join(consumer, 'node_modules', '@rpamis', 'comet', 'eval');
+    const installedPackageDir = await getInstalledPackageDir(consumer);
+    const harnessRoot = path.join(installedPackageDir, 'eval');
     const harnessBefore = await snapshotTree(harnessRoot);
     const sentinels = await installWorkloadSentinels(owner);
     temporary.push(sentinels.bin, sentinels.preload, sentinels.marker);
@@ -385,7 +351,7 @@ describe('packaged static collect', () => {
       HTTP_PROXY: 'http://127.0.0.1:9',
       HTTPS_PROXY: 'http://127.0.0.1:9',
     };
-    const cli = path.join(consumer, 'node_modules', '@rpamis', 'comet', 'bin', 'comet.js');
+    const cli = path.join(installedPackageDir, 'bin', 'comet.js');
     for (const suite of ['local', 'langsmith', 'langfuse']) {
       const result = spawnSync(
         process.execPath,

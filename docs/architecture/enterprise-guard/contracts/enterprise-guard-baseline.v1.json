@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "comet.enterprise-guard-baseline.v1",
+  "inputSchemaVersion": "comet.enterprise-hook-input.v1",
+  "ruleResultSchemaVersion": "comet.enterprise-rule-result.v1",
+  "findingSchemaVersion": "comet.enterprise-finding.v1",
+  "exceptionSchemaVersion": "comet.enterprise-exception.v1",
+  "ruleIds": [
+    "EG-HARD-INPUT-001",
+    "EG-HARD-ENV-001",
+    "EG-HARD-SECRET-001",
+    "EG-HARD-RM-001",
+    "EG-HARD-GIT-001",
+    "EG-SOFT-SECRET-002",
+    "EG-SOFT-DELETE-002",
+    "EG-SOFT-GIT-002"
+  ]
+}

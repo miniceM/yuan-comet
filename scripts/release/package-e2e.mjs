@@ -13,6 +13,7 @@ const requiredPackageFiles = [
   'assets/skills/comet/SKILL.md',
   'assets/skills/comet/scripts/comet-entry-runtime.mjs',
   'assets/skills/comet/scripts/comet-hook-router.mjs',
+  'assets/skills/comet/scripts/comet-enterprise-gateway.mjs',
   'assets/skills/comet/scripts/comet-runtime.mjs',
   'assets/skills/comet/scripts/comet-state.mjs',
   'assets/skills/comet-native/SKILL.md',
@@ -29,6 +30,7 @@ const requiredNativeInstallFiles = [
   'comet/SKILL.md',
   'comet/scripts/comet-entry-runtime.mjs',
   'comet/scripts/comet-hook-router.mjs',
+  'comet/scripts/comet-enterprise-gateway.mjs',
   'comet-native/SKILL.md',
   'comet-native/scripts/comet-native-runtime.mjs',
   'comet-native/scripts/comet-native-new.mjs',
@@ -77,6 +79,46 @@ async function disableCliFallback(packageRoot, relativePath) {
   await fs.rename(source, disabled);
 }
 
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function prepareEnterpriseCliStubs(binDir) {
+  const driver = path.join(binDir, 'enterprise-cli-stub.mjs');
+  await fs.writeFile(
+    driver,
+    [
+      '#!/usr/bin/env node',
+      'const [command, ...args] = process.argv.slice(2);',
+      "if (command === 'iam' && args[0] === '--help') { console.log('IAM CLI\\nAvailable Commands:\\n  auth Authenticate with IAM'); process.exit(0); }",
+      "if (command === 'dop' && args[0] === '--help') { console.log('DOP CLI\\nAvailable Commands:\\n  change Manage system changes'); process.exit(0); }",
+      "if (command === 'gh' && args[0] === '--version') { console.log('gh version gitee-cli 1.0.6'); process.exit(0); }",
+      "console.error('unsupported enterprise CLI stub invocation');",
+      'process.exit(1);',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  for (const command of ['iam', 'dop', 'gh']) {
+    if (process.platform === 'win32') {
+      await fs.writeFile(
+        path.join(binDir, `${command}.cmd`),
+        `@echo off\r\n"${process.execPath}" "${driver}" ${command} %*\r\n`,
+        'utf8',
+      );
+    } else {
+      const wrapper = path.join(binDir, command);
+      await fs.writeFile(
+        wrapper,
+        `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(driver)} ${command} "$@"\n`,
+        'utf8',
+      );
+      await fs.chmod(wrapper, 0o755);
+    }
+  }
+}
+
 async function main() {
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'comet-package-e2e-'));
   try {
@@ -86,11 +128,19 @@ async function main() {
     const classicProjectDir = path.join(temporaryRoot, 'classic-project');
     const homeDir = path.join(temporaryRoot, 'home');
     const npmCache = path.join(temporaryRoot, 'npm-cache');
+    const enterpriseCliBin = path.join(temporaryRoot, 'enterprise-cli-bin');
     await Promise.all(
-      [packageDir, consumerDir, projectDir, classicProjectDir, homeDir, npmCache].map((directory) =>
-        fs.mkdir(directory, { recursive: true }),
-      ),
+      [
+        packageDir,
+        consumerDir,
+        projectDir,
+        classicProjectDir,
+        homeDir,
+        npmCache,
+        enterpriseCliBin,
+      ].map((directory) => fs.mkdir(directory, { recursive: true })),
     );
+    await prepareEnterpriseCliStubs(enterpriseCliBin);
 
     // npm pack runs with --ignore-scripts, so drive the npm README transform
     // manually around it to exercise the exact tarball npm publish would ship.
@@ -132,6 +182,10 @@ async function main() {
       NPM_CONFIG_CACHE: npmCache,
       npm_config_cache: npmCache,
     };
+    const pathKey = Object.keys(environment).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+    environment[pathKey] = [enterpriseCliBin, environment[pathKey]]
+      .filter(Boolean)
+      .join(path.delimiter);
 
     run('npm', ['init', '--yes'], { cwd: consumerDir, env: environment });
     run('npm', ['install', '--no-audit', '--no-fund', tarball], {
@@ -171,6 +225,14 @@ async function main() {
     if (init.status !== 'complete' || !Array.isArray(init.results) || init.failures.length > 0) {
       throw new Error(
         `Packaged Native init did not complete successfully: ${JSON.stringify(init)}`,
+      );
+    }
+    if (
+      init.enterpriseCli?.status !== 'complete' ||
+      init.enterpriseCli.tools?.some((tool) => tool.action !== 'reused')
+    ) {
+      throw new Error(
+        `Packaged Native init did not reuse the enterprise CLI test stubs: ${JSON.stringify(init.enterpriseCli)}`,
       );
     }
     if (init.results.length !== PLATFORMS.length) {

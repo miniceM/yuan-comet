@@ -19,6 +19,7 @@ coverage
 /design-qa.md
 
 # Dependency directories
+node_modules
 node_modules/
 
 # TypeScript cache

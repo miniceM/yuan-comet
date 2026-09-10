@@ -17,6 +17,7 @@ import {
   removeOpenSpecSkillsForPlatform,
   removeSuperpowersSkillsForPlatforms,
 } from '../../domains/skill/uninstall.js';
+import { removeEnterpriseGuard } from '../../domains/enterprise-guard/hook-lifecycle.js';
 import { detectInstalledCometTargets, type InstalledCometTarget } from './update.js';
 import {
   listProjectRegistryEntries,
@@ -398,10 +399,11 @@ async function uninstallSingleProject(
     let hooksFailed = 0;
     if (removingAllWorkflows && target.platform.supportsHooks) {
       const hooksResult = await removeCometHooksForPlatform(baseDir, target.platform, target.scope);
-      hooksRemoved = hooksResult.removed;
-      hooksFailed = hooksResult.failed;
-      totalHooks += hooksResult.removed;
-      totalFailures += hooksResult.failed;
+      const enterpriseResult = await removeEnterpriseGuard(baseDir, target.platform, target.scope);
+      hooksRemoved = hooksResult.removed + enterpriseResult.removed;
+      hooksFailed = hooksResult.failed + enterpriseResult.failed;
+      totalHooks += hooksRemoved;
+      totalFailures += hooksFailed;
     }
 
     const rulesResult = removingAllWorkflows

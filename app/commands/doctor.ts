@@ -28,6 +28,16 @@ import {
   reconcileProjectCometHooksForPlatform,
 } from '../../domains/skill/hook-lifecycle.js';
 import {
+  OPENCODE_PLUGIN_FILE,
+  OPENCODE_RUNNER_FILE,
+  inspectEnterpriseGuard,
+  installEnterpriseGuard,
+} from '../../domains/enterprise-guard/hook-lifecycle.js';
+import {
+  usesEnterpriseGuardGateway,
+  usesEnterpriseGuardPlugin,
+} from '../../domains/enterprise-guard/platform-coverage.js';
+import {
   getPlatformRuleDestinations,
   getLegacyPlatformRuleDestinations,
   inspectCometHooksForPlatform,
@@ -106,6 +116,8 @@ const SUPERPOWERS_SENTINELS = [
   'writing-plans/SKILL.md',
 ] as const;
 const HOOK_ROUTER_RUNTIME = 'comet/scripts/comet-hook-router.mjs';
+const ENTERPRISE_GATEWAY_RUNTIME = 'comet/scripts/comet-enterprise-gateway.mjs';
+const OPENCODE_GUARD_PLUGIN_ASSET_RUNTIME = 'comet/plugins/comet-enterprise-guard.mjs';
 const CLASSIC_PLATFORM_TOOL_SCAN_MAX_ENTRIES = 4096;
 const CLASSIC_PLATFORM_TOOL_SCAN_MAX_DEPTH = 8;
 const CLASSIC_PLATFORM_TOOL_SCAN_MAX_FINDINGS = 128;
@@ -154,6 +166,66 @@ function hookRouterRuntimePaths(
       ...HOOK_ROUTER_RUNTIME.split('/'),
     ),
   };
+}
+
+function enterpriseGatewayRuntimePaths(
+  baseDir: string,
+  platform: Platform,
+  scope: InstallScope,
+): { source: string; destination: string } {
+  return {
+    source: path.join(getAssetsDir(), 'skills', ...ENTERPRISE_GATEWAY_RUNTIME.split('/')),
+    destination: path.join(
+      baseDir,
+      getPlatformSkillsDir(platform, scope),
+      'skills',
+      ...ENTERPRISE_GATEWAY_RUNTIME.split('/'),
+    ),
+  };
+}
+
+function enterpriseGuardPluginRuntimePaths(
+  baseDir: string,
+  platform: Platform,
+  scope: InstallScope,
+): {
+  pluginSource: string;
+  pluginDestination: string;
+  runnerSource: string;
+  runnerDestination: string;
+} {
+  return {
+    pluginSource: path.join(
+      getAssetsDir(),
+      'skills',
+      ...OPENCODE_GUARD_PLUGIN_ASSET_RUNTIME.split('/'),
+    ),
+    pluginDestination: path.join(
+      baseDir,
+      getPlatformSkillsDir(platform, scope),
+      'plugins',
+      OPENCODE_PLUGIN_FILE,
+    ),
+    runnerSource: path.join(getAssetsDir(), 'skills', 'comet', 'scripts', OPENCODE_RUNNER_FILE),
+    runnerDestination: path.join(
+      baseDir,
+      getPlatformSkillsDir(platform, scope),
+      'skills',
+      'comet',
+      'scripts',
+      OPENCODE_RUNNER_FILE,
+    ),
+  };
+}
+
+function repairRuntimePathsFor(
+  baseDir: string,
+  platform: Platform,
+  scope: InstallScope,
+): { source: string; destination: string } {
+  return usesEnterpriseGuardGateway(platform)
+    ? enterpriseGatewayRuntimePaths(baseDir, platform, scope)
+    : hookRouterRuntimePaths(baseDir, platform, scope);
 }
 
 function checkCometCli(): CheckResult {
@@ -649,7 +721,7 @@ async function checkSuperpowers(
   return {
     check: 'Superpowers',
     status: 'warn',
-    message: 'not detected — install with: npx skills add obra/superpowers -y --agent <platform>',
+    message: 'not detected — install with: npm install superpowers-zh or run comet init',
   };
 }
 
@@ -775,7 +847,121 @@ async function checkHookComponents(
   scope: InstallScope,
   workflowSelection: InitWorkflowSelection,
 ): Promise<CheckResult[]> {
+  if (usesEnterpriseGuardPlugin(platform)) {
+    const runtime = enterpriseGuardPluginRuntimePaths(baseDir, platform, scope);
+    let expectedPlugin: Buffer;
+    let expectedRunner: Buffer;
+    try {
+      [expectedPlugin, expectedRunner] = await Promise.all([
+        fs.readFile(runtime.pluginSource),
+        fs.readFile(runtime.runnerSource),
+      ]);
+    } catch (error) {
+      return [
+        {
+          check: `enterprise guard plugin: ${platform.name} (${scope})`,
+          status: 'warn',
+          message: `unable to verify current Enterprise Guard plugin runtime (${(error as Error).message}) — run: comet doctor --repair --scope ${scope}`,
+        },
+      ];
+    }
+
+    const [plugin, runner] = await Promise.all([
+      fs.readFile(runtime.pluginDestination).catch(() => null),
+      fs.readFile(runtime.runnerDestination).catch(() => null),
+    ]);
+    const inspection = await inspectEnterpriseGuard(baseDir, platform, scope);
+    const reasons: string[] = [];
+    if (!plugin) reasons.push('managed Enterprise Guard plugin missing');
+    else if (!expectedPlugin.equals(plugin))
+      reasons.push('outdated Enterprise Guard plugin runtime');
+    if (!runner) reasons.push('managed Enterprise Guard runner missing');
+    else if (!expectedRunner.equals(runner))
+      reasons.push('outdated Enterprise Guard runner runtime');
+    if (runner && process.platform !== 'win32') {
+      try {
+        const runnerStat = await fs.stat(runtime.runnerDestination);
+        if ((runnerStat.mode & 0o111) === 0) {
+          reasons.push('managed Enterprise Guard runner is not executable');
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (inspection.duplicatePresent) {
+      reasons.push('duplicate managed OpenCode Guard plugins remain');
+    }
+    if (inspection.error) reasons.push(inspection.error);
+    return [
+      {
+        check: `enterprise guard plugin: ${platform.name} (${scope})`,
+        status: reasons.length === 0 ? 'pass' : 'warn',
+        message:
+          reasons.length === 0
+            ? 'single managed OpenCode guard plugin present'
+            : `${reasons.join('; ')} — run: comet doctor --repair --scope ${scope}`,
+      },
+    ];
+  }
+
   if (!platform.supportsHooks || !platform.hookFormat) return [];
+
+  if (usesEnterpriseGuardGateway(platform)) {
+    const gatewayRuntime = enterpriseGatewayRuntimePaths(baseDir, platform, scope);
+    let expected: Buffer;
+    try {
+      expected = await fs.readFile(gatewayRuntime.source);
+    } catch (error) {
+      return [
+        {
+          check: `enterprise gateway: ${platform.name} (${scope})`,
+          status: 'warn',
+          message: `unable to verify current Enterprise Gateway runtime (${(error as Error).message}) — run: comet doctor --repair --scope ${scope}`,
+        },
+      ];
+    }
+    let outdated = false;
+    let destinationMissing = false;
+    try {
+      const installed = await fs.readFile(gatewayRuntime.destination);
+      outdated = !expected.equals(installed);
+    } catch {
+      destinationMissing = true;
+    }
+    const inspection = await inspectEnterpriseGuard(baseDir, platform, scope);
+    const reasons: string[] = [];
+    if (destinationMissing || !inspection.present) {
+      reasons.push('managed Enterprise Gateway missing');
+    }
+    if (outdated) reasons.push('outdated Enterprise Gateway runtime');
+    if (!destinationMissing && process.platform !== 'win32') {
+      try {
+        const gatewayStat = await fs.stat(gatewayRuntime.destination);
+        if ((gatewayStat.mode & 0o111) === 0) {
+          reasons.push('managed Enterprise Gateway runtime is not executable');
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (inspection.duplicatePresent) {
+      reasons.push('duplicate managed Enterprise Gateway Hooks remain');
+    }
+    if (inspection.legacyPresent) {
+      reasons.push('legacy managed Hook coexists with the Enterprise Gateway');
+    }
+    if (inspection.error) reasons.push(inspection.error);
+    return [
+      {
+        check: `enterprise gateway: ${platform.name} (${scope})`,
+        status: reasons.length === 0 ? 'pass' : 'warn',
+        message:
+          reasons.length === 0
+            ? 'exactly one managed Enterprise Gateway present'
+            : `${reasons.join('; ')} — run: comet doctor --repair --scope ${scope}`,
+      },
+    ];
+  }
 
   const results: CheckResult[] = [];
   const runtime = hookRouterRuntimePaths(baseDir, platform, scope);
@@ -804,6 +990,11 @@ async function checkHookComponents(
     scope,
     workflowSelection,
   );
+  results.push({
+    check: `enterprise guard: ${platform.name} (${scope})`,
+    status: 'pass',
+    message: 'rules injection + CI fallback — no Enterprise Guard Hook is installed',
+  });
   if (scope === 'global') {
     results.push(globalHookCheckResult(platform, scope, inspection));
     return results;
@@ -854,18 +1045,21 @@ async function getHookOnlyInspections(
   baseDir: string,
   scope: InstallScope,
   knownPlatformIds: ReadonlySet<string>,
-): Promise<
-  Array<{
-    platform: Platform;
-    inspection: Awaited<ReturnType<typeof inspectCometHooksForPlatform>>;
-  }>
-> {
-  const results: Array<{
-    platform: Platform;
-    inspection: Awaited<ReturnType<typeof inspectCometHooksForPlatform>>;
-  }> = [];
+): Promise<Array<{ platform: Platform }>> {
+  const results: Array<{ platform: Platform }> = [];
   for (const platform of PLATFORMS) {
-    if (knownPlatformIds.has(platform.id) || !platform.supportsHooks || !platform.hookFormat) {
+    const isPluginPlatform = usesEnterpriseGuardPlugin(platform);
+    if (
+      knownPlatformIds.has(platform.id) ||
+      (!isPluginPlatform && (!platform.supportsHooks || !platform.hookFormat))
+    ) {
+      continue;
+    }
+    if (isPluginPlatform) {
+      const inspection = await inspectEnterpriseGuard(baseDir, platform, scope);
+      if (inspection.present || inspection.managedPresent || inspection.error) {
+        results.push({ platform });
+      }
       continue;
     }
     const inspection = await inspectCometHooksForPlatform(baseDir, platform, scope);
@@ -875,7 +1069,7 @@ async function getHookOnlyInspections(
       inspection.legacyPresent ||
       inspection.error
     ) {
-      results.push({ platform, inspection });
+      results.push({ platform });
     }
   }
   return results;
@@ -1522,8 +1716,11 @@ async function repairDoctorState(
   let projectRouterReady = projectedProjectPlatforms.size > 0;
 
   for (const target of hookOnlyTargets) {
-    if (target.scope === 'project') {
-      const runtime = hookRouterRuntimePaths(target.baseDir, target.platform, target.scope);
+    const canRepairRuntime =
+      !usesEnterpriseGuardPlugin(target.platform) &&
+      (target.scope === 'project' || usesEnterpriseGuardGateway(target.platform));
+    if (canRepairRuntime) {
+      const runtime = repairRuntimePathsFor(target.baseDir, target.platform, target.scope);
       await copyFile(runtime.source, runtime.destination);
     }
     const hookResult =
@@ -1548,13 +1745,23 @@ async function repairDoctorState(
     if (target.scope === 'project' && hookResult.status === 'installed') {
       projectRouterReady = true;
     }
+    const enterpriseResult = await installEnterpriseGuard(
+      target.baseDir,
+      target.platform,
+      target.scope,
+    );
+    if (enterpriseResult.status === 'failed') {
+      throw new Error(
+        `failed to repair Enterprise Guard for ${target.platform.name} (${target.scope}): ${enterpriseResult.reason}`,
+      );
+    }
     repaired.push(`${target.platform.name} (${target.scope}) Hook`);
   }
 
   for (const target of targets) {
     const { baseDir, scope: targetScope, platform } = target;
     if (platform.supportsHooks && platform.hookFormat) {
-      const runtime = hookRouterRuntimePaths(baseDir, platform, targetScope);
+      const runtime = repairRuntimePathsFor(baseDir, platform, targetScope);
       await copyFile(runtime.source, runtime.destination);
     }
     const hookResult =
@@ -1570,6 +1777,12 @@ async function repairDoctorState(
     }
     if (targetScope === 'project' && hookResult.status === 'installed') {
       projectRouterReady = true;
+    }
+    const enterpriseResult = await installEnterpriseGuard(baseDir, platform, targetScope);
+    if (enterpriseResult.status === 'failed') {
+      throw new Error(
+        `failed to repair Enterprise Guard for ${platform.name} (${targetScope}): ${enterpriseResult.reason}`,
+      );
     }
   }
 

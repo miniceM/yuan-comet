@@ -4,7 +4,10 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resolveCometHookProjectRoot } from '../../../domains/comet-entry/hook-project-root.js';
+import {
+  resolveCometHookProjectRoot,
+  projectRootFrom,
+} from '../../../domains/comet-entry/hook-project-root.js';
 
 describe('Comet Hook worktree project root', () => {
   let primary: string;
@@ -91,5 +94,34 @@ describe('Comet Hook worktree project root', () => {
         cwd: secondary,
       }),
     ).rejects.toThrow('linked worktree');
+  });
+});
+
+describe('Comet Hook project root discovery', () => {
+  it('requires a valid Comet config and keeps a legacy invocation neutral without a request cwd', async () => {
+    const parsed = { platformId: 'codex' } as Parameters<typeof projectRootFrom>[0];
+    await expect(projectRootFrom(parsed)).resolves.toBeNull();
+    await expect(projectRootFrom(parsed, undefined)).resolves.toBeNull();
+
+    const plainGit = await fs.mkdtemp(path.join(os.tmpdir(), 'comet-hook-router-plain-git-'));
+    const configured = await fs.mkdtemp(path.join(os.tmpdir(), 'comet-hook-router-project-'));
+    try {
+      await fs.mkdir(path.join(plainGit, '.git'));
+      await expect(
+        projectRootFrom({ platformId: 'codex', projectRoot: plainGit }),
+      ).resolves.toBeNull();
+
+      await fs.mkdir(path.join(configured, '.comet'), { recursive: true });
+      await fs.writeFile(
+        path.join(configured, '.comet', 'config.yaml'),
+        'schema: comet.project.v1\ndefault_workflow: native\nworkflows: [native]\nnative:\n  artifact_root: docs\n',
+      );
+      await expect(projectRootFrom({ platformId: 'codex', projectRoot: configured })).resolves.toBe(
+        configured,
+      );
+    } finally {
+      await fs.rm(plainGit, { recursive: true, force: true });
+      await fs.rm(configured, { recursive: true, force: true });
+    }
   });
 });

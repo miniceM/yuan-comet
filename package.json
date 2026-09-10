@@ -1,6 +1,6 @@
 {
-  "name": "@rpamis/comet",
-  "version": "0.4.1",
+  "name": "@cli-tools/yuan-comet",
+  "version": "0.4.0",
   "description": "Agent Skill Harness For Turning Ideas Into Evaluated Workflows",
   "keywords": [
     "comet",
@@ -54,7 +54,9 @@
     "build:classic-runtime": "node scripts/build/build-classic-runtime.mjs",
     "build:native-runtime": "node scripts/build/build-native-runtime.mjs",
     "build:entry-runtime": "node scripts/build/build-entry-runtime.mjs",
-    "check:generated": "node scripts/build/build-classic-runtime.mjs --check && node scripts/build/build-native-runtime.mjs --check && node scripts/build/build-entry-runtime.mjs --check",
+    "build:enterprise-guard-runtime": "node scripts/build/build-enterprise-guard-runtime.mjs",
+    "check:generated": "node scripts/build/build-classic-runtime.mjs --check && node scripts/build/build-native-runtime.mjs --check && node scripts/build/build-entry-runtime.mjs --check && node scripts/build/build-enterprise-guard-runtime.mjs --check",
+    "check:enterprise-guard": "node scripts/lint/check-enterprise-findings.mjs",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:native-parallel": "vitest run test/domains/comet-native/native-parallel-worktree.test.ts",
@@ -64,8 +66,9 @@
     "test:dashboard-e2e": "playwright test --config test/domains/dashboard/playwright.config.ts",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "lint": "eslint app/ domains/ platform/ && pnpm run lint:architecture",
+    "lint": "eslint app/ domains/ platform/ && pnpm run lint:architecture && pnpm run lint:enterprise-guard",
     "lint:architecture": "node scripts/lint/architecture.mjs",
+    "lint:enterprise-guard": "node scripts/lint/enterprise-guard-baseline.mjs",
     "lint:fix": "eslint app/ domains/ platform/ --fix",
     "format": "prettier --write app/ domains/ platform/ scripts/ test/ .github/ config/ package.json vitest.config.ts build.js tsconfig.json",
     "format:check": "prettier --check app/ domains/ platform/ scripts/ test/ .github/ config/ package.json vitest.config.ts build.js tsconfig.json",
@@ -145,9 +148,11 @@
     "commander": "^15.0.0",
     "dompurify": "^3.4.14",
     "highlight.js": "^11.12.0",
+    "jsonc-parser": "^3.3.1",
     "marked": "^18.0.11",
     "mermaid": "11.17.2",
     "smol-toml": "^1.8.0",
+    "superpowers-zh": "^1.7.11",
     "yaml": "^2.9.0"
   }
 }

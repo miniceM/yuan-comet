@@ -43,6 +43,19 @@ vi.mock('../../app/cli/comet-banner.js', () => ({
 const manifestPath = path.resolve('assets', 'manifest.json');
 const INIT_E2E_TIMEOUT_MS = 60_000;
 
+type InstalledHook = { type?: string; command?: string; args?: unknown };
+
+function installedHookIncludesScript(hook: InstalledHook, scriptName: string): boolean {
+  return (
+    hook.command?.includes(scriptName) === true ||
+    (Array.isArray(hook.args) &&
+      hook.args.some(
+        (argument): argument is string =>
+          typeof argument === 'string' && argument.includes(scriptName),
+      ))
+  );
+}
+
 async function readManifest() {
   return JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
 }
@@ -52,6 +65,7 @@ function isNativeInstallSkillPath(skillPath: string): boolean {
     skillPath === 'comet/SKILL.md' ||
     skillPath.startsWith('comet-review/') ||
     skillPath === 'comet/scripts/comet-entry-runtime.mjs' ||
+    skillPath === 'comet/scripts/comet-enterprise-gateway.mjs' ||
     skillPath === 'comet/scripts/comet-hook-router.mjs' ||
     skillPath.startsWith('comet-native/') ||
     skillPath.startsWith('comet-any/') ||
@@ -73,6 +87,16 @@ function mockExternalSuccess(options: { openSpecConfig?: 'healthy' | 'missing' |
   mockedExecFileSync.mockImplementation((command: unknown, args?: unknown, opts?: unknown) => {
     const cmd = String(command);
     const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
+
+    if (cmd === 'iam' && cmdArgs[0] === '--help') {
+      return Buffer.from('IAM CLI\nAvailable Commands:\n  auth Authenticate with IAM\n');
+    }
+    if (cmd === 'dop' && cmdArgs[0] === '--help') {
+      return Buffer.from('DOP CLI\nAvailable Commands:\n  change Manage system changes\n');
+    }
+    if (cmd === 'gh' && cmdArgs[0] === '--version') {
+      return Buffer.from('gh version gitee-cli 1.0.6\n');
+    }
 
     if (
       (cmd === 'npx' || cmd === 'npx.cmd') &&
@@ -163,6 +187,7 @@ describe('comet init E2E', () => {
     vi.resetAllMocks();
     vi.resetModules();
     vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmpDir, 'fake-home'));
+    mockExternalSuccess();
   });
 
   afterEach(async () => {
@@ -365,6 +390,9 @@ describe('comet init E2E', () => {
       await expect(
         fs.stat(path.join(tmpDir, '.claude', 'settings.local.json')),
       ).resolves.toBeDefined();
+      await expect(
+        fs.readFile(path.join(tmpDir, '.claude', 'settings.local.json'), 'utf8'),
+      ).resolves.toContain('comet-enterprise-gateway.mjs');
 
       const projectConfig = await fs.readFile(path.join(tmpDir, '.comet', 'config.yaml'), 'utf8');
       expect(projectConfig).toContain('default_workflow: native');
@@ -385,6 +413,51 @@ describe('comet init E2E', () => {
             call[1].includes('skills'),
         ),
       ).toBe(false);
+    },
+    INIT_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'installs exactly one managed Enterprise Gateway for Claude and preserves user hooks',
+    async () => {
+      mockExternalSuccess();
+      await fs.mkdir(path.join(tmpDir, '.claude'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.claude', 'settings.local.json'),
+        JSON.stringify(
+          {
+            hooks: {
+              PreToolUse: [
+                {
+                  matcher: 'Write|Edit',
+                  hooks: [{ type: 'command', command: 'node user-hook.mjs' }],
+                },
+              ],
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      const { initCommand } = await import('../../app/commands/init.js');
+      await captureJsonOutput(() => initCommand(tmpDir, { yes: true, json: true }));
+
+      const settings = JSON.parse(
+        await fs.readFile(path.join(tmpDir, '.claude', 'settings.local.json'), 'utf8'),
+      ) as { hooks: { PreToolUse: Array<{ hooks: InstalledHook[] }> } };
+      const hooks = settings.hooks.PreToolUse.flatMap((group) => group.hooks);
+      expect(
+        hooks.filter((hook) => installedHookIncludesScript(hook, 'comet-enterprise-gateway.mjs')),
+      ).toHaveLength(1);
+      expect(hooks.some((hook) => installedHookIncludesScript(hook, 'comet-hook-router.mjs'))).toBe(
+        false,
+      );
+      expect(
+        hooks.some((hook) => installedHookIncludesScript(hook, 'comet-enterprise-hook.mjs')),
+      ).toBe(false);
+      expect(hooks).toContainEqual({ type: 'command', command: 'node user-hook.mjs' });
     },
     INIT_E2E_TIMEOUT_MS,
   );
@@ -1871,9 +1944,12 @@ describe('comet init E2E', () => {
 
   it.each([
     { workflow: 'native' as const, expected: ['codegraph'] },
-    { workflow: 'both' as const, expected: ['openspec', 'superpowers', 'codegraph'] },
+    {
+      workflow: 'both' as const,
+      expected: ['openspec', 'superpowers', 'codegraph'],
+    },
   ])(
-    'offers the CodeGraph dependency for $workflow initialization',
+    'offers CodeGraph dependencies for $workflow initialization',
     async ({ workflow, expected }) => {
       mockExternalSuccess();
       await fs.mkdir(path.join(tmpDir, '.codex'), { recursive: true });
@@ -3080,6 +3156,16 @@ describe('comet init E2E', () => {
       mockedExecFileSync.mockImplementation((command: unknown, args?: unknown) => {
         const cmd = String(command);
         const cmdArgs = Array.isArray(args) ? args.map((arg) => String(arg)) : [];
+
+        if (cmd === 'iam' && cmdArgs[0] === '--help') {
+          return Buffer.from('IAM CLI auth\n');
+        }
+        if (cmd === 'dop' && cmdArgs[0] === '--help') {
+          return Buffer.from('DOP CLI change\n');
+        }
+        if (cmd === 'gh' && cmdArgs[0] === '--version') {
+          return Buffer.from('gh version gitee-cli 1.0.6\n');
+        }
 
         if ((cmd === 'which' || cmd === 'where') && cmdArgs[0] === 'openspec') {
           return Buffer.from('/usr/bin/openspec');

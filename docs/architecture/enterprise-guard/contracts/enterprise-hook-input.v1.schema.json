@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/miniceM/comet/docs/architecture/enterprise-guard/contracts/enterprise-hook-input.v1.schema.json",
+  "title": "Enterprise Hook Input v1",
+  "description": "A normalized, redaction-safe representation of one platform hook event. Implementations must preserve unknown or unavailable data instead of inventing safe values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "platform",
+    "event",
+    "workingDirectory",
+    "tool",
+    "command",
+    "writes",
+    "parse",
+    "truncation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "comet.enterprise-hook-input.v1"
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "surface"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface": {
+          "enum": ["project", "managed-global", "ci", "unknown"]
+        },
+        "version": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "preAction", "blockingCapable"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preAction": {
+          "type": "boolean"
+        },
+        "blockingCapable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "workingDirectory": {
+      "$ref": "#/$defs/capturedString"
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "input"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/capturedString"
+        },
+        "input": {
+          "$ref": "#/$defs/capturedJson"
+        }
+      }
+    },
+    "command": {
+      "$ref": "#/$defs/capturedString"
+    },
+    "writes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation", "path", "fragment"],
+        "properties": {
+          "operation": {
+            "enum": ["create", "edit", "delete", "rename", "unknown"]
+          },
+          "path": {
+            "$ref": "#/$defs/capturedString"
+          },
+          "fragment": {
+            "$ref": "#/$defs/capturedString"
+          }
+        }
+      }
+    },
+    "parse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "errors"],
+      "properties": {
+        "status": {
+          "enum": ["complete", "partial", "failed", "unavailable"]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxCapturedBytes", "fields"],
+      "properties": {
+        "maxCapturedBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "capturedBytes", "originalBytes", "truncated"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "capturedBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "originalBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "capturedString": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "capturedBytes", "originalBytes", "truncated"],
+      "properties": {
+        "value": {
+          "type": ["string", "null"]
+        },
+        "capturedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "originalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capturedJson": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "capturedBytes", "originalBytes", "truncated"],
+      "properties": {
+        "value": {
+          "type": ["object", "array", "string", "number", "integer", "boolean", "null"]
+        },
+        "capturedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "originalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

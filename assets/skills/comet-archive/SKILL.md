@@ -32,6 +32,17 @@ Proceed to Step 1 after verification passes. The script outputs specific failure
 
 If the `select` / `check` output is `BLOCKED` because `bound_branch` does not match the current branch, immediately pause under `comet-classic/reference/decision-point.md` and let the user choose one option: switch back to the bound branch and rerun entry verification, or run `comet state rebind <change-name>` after the user explicitly confirms the current branch should take over this change, then rerun entry verification. Do not switch branches or rebind on your own.
 
+### 0c. Enterprise Identity Authentication Check (iam)
+
+Before proceeding to archive confirmation and commit handling, perform enterprise authentication check:
+
+```bash
+iam auth status --json
+```
+
+- Parse the result: the `credentials` list must not be empty, and each item must have `status` as `logged` (including devops and code repository credentials).
+- **Unauthorized Handling**: If the user is not logged in, credentials are insufficient, or the command exits non-zero, output a prompt (recommend running `iam auth login`), and **stop the flow immediately** to ensure commit and push/PR operations have valid authorization.
+
 ### 1. Final Archive and Delivery Confirmation (Blocking Point)
 
 After entry verification passes, first read `comet state get <change-name> isolation`, then **follow the `comet-classic/reference/decision-point.md` protocol to pause and wait for the user to confirm whether to archive now and how to handle the archive commit**. Must not run `comet state transition <change-name> archive-confirm` or `comet archive "<change-name>"` before user confirmation.
@@ -62,6 +73,8 @@ comet state transition <change-name> archive-confirm
 If the transition returns a non-zero exit code, report the error and stop. Only after the transition succeeds may Step 2 continue. After the user selects D, "Needs adjustment or re-verification", first run the `archive-reopen` state transition; do not edit `.comet.yaml` manually. After the user selects E, "Do not archive yet", stop immediately; do not archive, commit, push, or set `branch_status` to `handled`.
 
 ### 2. Execute Archive
+
+If the current change is associated with an external DOP change (a `change_id` exists), record the pending DOP completion status in change metadata before invoking `comet archive`: `dop_completion: { status: 'pending', prepared_at: <ISO timestamp> }`.
 
 Run the archive script:
 
@@ -130,6 +143,22 @@ After the archive commit succeeds, perform only the handling method the user con
 - C, "Confirm archive, push now, and create a PR": push the current bound branch once, then create a PR through the configured GitHub integration. The explicit Step 1 choice authorizes PR creation; do not substitute another branch disposition.
 
 After the user selects B or C, if push fails, report the error and retain the current selection record; do not clear selection or report completion. Within the current task, retry only that same push. If PR creation fails, the branch already contains the complete archive commit; report the error and retain the current selection record. Within the current task, retry only PR creation. Do not automatically switch, delete, rebase, or rewrite branches after failure.
+
+#### 5.1 DOP Status Finalization at Flow Completion
+
+When the archive commit is successfully delivered (if user selected C, "Confirm archive, push now, and create a PR", only after `gh pr create` successfully returns the PR URL; or for A/B if associated with external DOP):
+1. Check whether the change metadata contains an associated external `change_id`.
+2. If `change_id` exists, invoke the completion command:
+   ```bash
+   dop change done <change-id>
+   ```
+3. **Result Handling and Fault Tolerance**:
+   - **Execution Succeeded**: Retain metadata, output the PR URL and DOP change completion notification (`status: done`).
+   - **Execution Failed (network timeout, service error, or insufficient permissions)**:
+     - **Never revoke the created PR, and never roll back the git commit or merged archive specs**;
+     - Retain `dop_completion.status: pending` in metadata;
+     - Output the PR URL, specific failure summary, and a clear retry guide (prompt the user to manually run `dop change done <change-id>` to finish);
+     - Do not declare the external DOP workflow fully closed; explicitly note that external DOP is pending retry.
 
 For A, the selected handling method is complete once the only archive commit succeeds. For B or C, wait until every selected remote operation succeeds. Only after the selected handling method completes may you run `comet state clear-selection` and report the Classic workflow complete.
 

@@ -94,4 +94,28 @@ describe('Native atomic file containment', () => {
     expect(escapedContents).not.toContain('SECRET-EVIDENCE');
     expect(escapedContents.every((content) => content.length === 0)).toBe(true);
   });
+
+  it('retries transient rename errors when replacing target file', async () => {
+    const target = path.join(root, 'state.json');
+    await fs.writeFile(target, 'old');
+    const originalRename = fs.rename;
+    let attempts = 0;
+    const mockRename = async (source: string, destination: string) => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('operation not permitted') as NodeJS.ErrnoException;
+        error.code = 'EPERM';
+        throw error;
+      }
+      return originalRename(source, destination);
+    };
+    (fs as unknown as { rename: typeof mockRename }).rename = mockRename;
+    try {
+      await atomicWriteText(target, 'new');
+      expect(attempts).toBeGreaterThanOrEqual(2);
+      expect(await fs.readFile(target, 'utf8')).toBe('new');
+    } finally {
+      (fs as unknown as { rename: typeof originalRename }).rename = originalRename;
+    }
+  });
 });

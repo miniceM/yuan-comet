@@ -1,6 +1,58 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 环境要求
+
+- Node.js `>=22`（见 `package.json` 的 `engines` 字段）
+- pnpm 版本以 `package.json` 的 `packageManager` 字段为准（当前 `pnpm@10.18.3`）
+- 初始化：`git clone` 后执行 `pnpm install && pnpm build`
+
 ## 回复语言
 
 必须采用中文回答用户
+
+## 常用命令
+
+完整命令表见 `CONTRIBUTING-zh.md`，以下为开发中最常用的：
+
+```bash
+# 构建
+pnpm build                           # 全量构建（Classic + Native + Entry runtime + dashboard）
+pnpm build:classic-runtime           # 单独打包 Classic runtime
+pnpm build:native-runtime            # 单独打包 Native runtime
+pnpm build:entry-runtime             # 单独打包共享入口与 Hook Router
+pnpm build:enterprise-guard-runtime  # 单独打包企业级 Guard Gateway runtime
+pnpm build:dashboard                 # 单独构建 dashboard 前端（Vite）
+pnpm dev                             # TypeScript watch 模式
+pnpm dev:dashboard                   # Dashboard 前端开发模式
+
+# 测试
+npx vitest run <相关测试文件>         # 单文件测试（默认最小范围）
+npx vitest run                       # 全量测试（高风险修改或交付前）
+pnpm test:watch                      # Vitest watch 模式
+pnpm test:coverage                   # 测试 + 覆盖率
+pnpm test:runtime-smoke              # Runtime 启动器 smoke 测试（CI 入口）
+pnpm test:script-smoke               # Classic 启动器 smoke 测试
+pnpm test:dashboard-e2e              # Dashboard Playwright E2E
+
+# 校验
+pnpm lint                            # ESLint + 架构 linter + enterprise-guard
+pnpm lint:architecture               # 单独运行仓库分层 linter
+pnpm lint:enterprise-guard           # 单独运行企业级 Guard 基线校验
+pnpm format:check                    # Prettier 校验（CI 强制）
+pnpm format                          # Prettier 格式化
+pnpm check:generated                 # 检查 runtime bundle 新鲜度（不重建，只校验）
+```
+
+## 企业定制原则
+
+本项目为上游 comet 的 fork 子项目，在此基础上做优化时遵循以下前提：
+
+- 尽量不动上游现有源码结构：`app/`、`domains/`、`platform/`、`scripts/` 等现有模块与上游保持最小差异，不做重命名、移动或大面积改写，降低后续同步 upstream 的冲突成本。
+- 企业级定制的优化需求必须收敛到独立模块内实现（例如在 `domains/` 下新增独立 domain 模块），通过公开导出组合复用既有能力；禁止把定制逻辑散落嵌入上游模块内部。
+- 触达上游行为的接线点（如 Hook Router 接入、命令注册）只做最小侵入式挂载：单向 import 与注册，不回写上游实现。
+- 新增独立模块时按「项目结构规范」同步 `config/repository-layout.json`、架构 linter、对应 `test/domains/<domain>/` 测试目录和本节说明。
 
 ## 开发工作区保护
 
@@ -33,25 +85,15 @@ Issue、Review 意见、Project Knowledge、Memory 和历史记录只提供调�
 - 全量测试失败或超时时，先定位原因；只有修正了明确原因后才重跑，不盲目重复。
 - CI 已覆盖全量检查时，可以在本地只运行相关验证，但交付时必须明确说明未在本地运行的检查。
 
-```bash
-npx vitest run <相关测试文件>                     # 默认：最小相关测试
-npx vitest run                                   # 高风险修改或最终交付前的全量测试
-```
+测试目录与被测对象归属对应：
 
-## 提交前检查
-
-仓库已配置 Git pre-commit 钩子（husky + lint-staged），每次 `git commit` 会自动对 `app/`、`domains/`、`platform/`、`scripts/`、`test/`、`.github/`、`config/` 下的暂存源文件运行 `prettier --write`（与 CI `format:check` 范围一致；冻结的 `test/fixtures/` 除外），编辑器无关，所有贡献者生效。
-
-根据改动范围选择提交前检查；不要求每个提交机械地运行全部命令（CI 会执行完整检查）：
-
-```bash
-pnpm format:check   # 大范围格式检查；小范围可只检查受影响文件
-pnpm lint           # 修改源码、测试、脚本或配置时
-pnpm build          # 涉及编译、Runtime、生成物或发布资产时
-pnpm test           # 高风险修改或最终交付前需要本地全量验证时
-```
-
-注：本地 Windows 若 `core.autocrlf=true`，未改动的旧文件可能因 CRLF 被 `prettier --check` 误报；钩子只处理暂存文件，不受影响，旧文件下次编辑时会自动转为 LF。
+- `test/app/` → `app/` 命令与 CLI 行为
+- `test/domains/<domain>/` → `domains/<domain>/` 模块（新增 domain 时同步新增同名测试目录）
+- `test/platform/` → `platform/` 适配层
+- `test/scripts/` → `scripts/` 自动化脚本
+- `test/repository/` → README、CI、仓库布局等跨层约束
+- `test/fixtures/` 和 `test/helpers/` 只放测试数据与测试工具
+- 禁止新增或恢复 `test/ts/` 这种横向桶；旧文件应迁移到上层对应目录
 
 ## Commit 规范
 
@@ -70,23 +112,91 @@ pnpm test           # 高风险修改或最终交付前需要本地全量验证�
 当前源码目录按责任分层：
 
 - `app/`：CLI 入口、命令编排和用户交互层。只能组合 domain/platform 能力，不承载领域规则。
-- `domains/`：业务领域模块。每个子目录是一个可独立维护的领域模块，例如 `domains/bundle/`、`domains/comet-classic/`、`domains/comet-native/`、`domains/comet-entry/`、`domains/dashboard/`、`domains/skill/`、`domains/workflow-contract/`。
+- `domains/`：业务领域模块。每个子目录是一个可独立维护的领域模块：
+  - `bundle/`：Skill bundle 打包、兼容性基准、候选筛选
+  - `comet-classic/`：Classic workflow runtime（旧版状态机 + Guard）
+  - `comet-native/`：Native workflow runtime（新版状态机 + Guard，不依赖外部 Skill）
+  - `comet-entry/`：共享入口、selection 与 Hook Router（路由到当前 selection 的 workflow Guard）
+  - `dashboard/`：Comet Dashboard 前端（AntD React + Vite）
+  - `engine/`：Workflow 执行引擎、循环控制、护栏、评测运行
+  - `eval/`：Eval 容器编排、独立上下文、仓库基准
+  - `factory/`：发布资产打包、package 生成
+  - `integrations/`：外部集成（OpenSpec、Superpowers、CodeGraph）
+  - `skill/`：Skill 管理、加载、元数据
+  - `workflow-contract/`：跨 workflow 稳定契约（schema、状态类型）
 - `platform/`：文件系统、进程、安装平台、版本、路径等平台适配能力。domain 不应直接散落平台差异逻辑。
 - `scripts/`：构建、发布、benchmark、lint 等仓库自动化脚本。可调用源码模块，但不要成为运行时业务入口。
-- `assets/`：发布资产和内置 Skill 内容。修改 runtime 源码后必须通过构建同步生成资产，不要把业务逻辑只写在生成物里。
+- `assets/`：发布资产和内置 Skill 内容（英文 `assets/skills/`、中文 `assets/skills-zh/`）。修改 runtime 源码后必须通过构建同步生成资产，不要把业务逻辑只写在生成物里。
 - `eval/scaffold/shell/` 中仅允许 `config/repository-layout.json` 明确列出的隔离评审 sidecar 入口；它们属于 Eval 容器边界，不是产品 Runtime 入口。
-
-测试目录必须跟随被测对象归属：
-
-- `test/app/` 覆盖 `app/` 命令和 CLI 行为。
-- `test/domains/<domain>/` 覆盖对应 `domains/<domain>/` 模块；新增 domain 时同步新增同名测试目录。
-- `test/platform/` 覆盖 `platform/` 适配层。
-- `test/scripts/` 覆盖 `scripts/` 自动化脚本。
-- `test/repository/` 覆盖 README、CI、仓库布局等跨层约束。
-- `test/fixtures/` 和 `test/helpers/` 只放测试数据与测试工具。
-- 禁止新增或恢复 `test/ts/` 这种横向桶；旧文件应迁移到上面对应目录。
+- `config/`：仓库级配置，核心是 `repository-layout.json`（定义目录白名单、runtime 入口映射、生成物路径）
 
 架构约束由 `pnpm run lint:architecture` 校验，并已接入 `pnpm lint`。它会检查顶层目录白名单、活跃源码根、app/domain/platform 子模块、脚本模块、Classic/Native/Entry runtime 入口与生成物、内置 Skill 根目录、测试归属和禁止旧目录回归。如果确实需要新增顶层目录、源码模块、测试根目录或例外，必须先更新 `config/repository-layout.json`、架构 linter 和本节说明。
+
+## 开发流程
+
+### Runtime Bundle 新鲜度检查
+
+修改 `domains/comet-classic/`、`domains/comet-native/` 或 `domains/comet-entry/` 的源码后，**必须运行对应的 build 命令**重新生成 bundle，否则测试会因新鲜度检查失败：
+
+```bash
+# 修改 Classic 源码后
+pnpm build:classic-runtime
+# 或全量构建
+pnpm build
+
+# 修改 Native 源码后
+pnpm build:native-runtime
+
+# 修改 Entry 源码后
+pnpm build:entry-runtime
+
+# 修改 Enterprise Guard 源码后
+pnpm build:enterprise-guard-runtime
+
+# 只检查不重建（CI 用）
+pnpm check:generated
+```
+
+改完源码未重建就跑测试，会看到 `classic-runtime.test.ts`、`native-runtime-assets.test.ts` 或 `comet-entry-runtime-assets.test.ts` 失败，提示 bundle 与源码不一致。
+
+### 常见开发流程
+
+**修改 Classic/Native/Entry/Enterprise Guard runtime 源码**：
+
+1. 编辑 `domains/<runtime>/` 下的 TypeScript
+2. 运行对应的 `pnpm build:<runtime>-runtime`
+3. 运行相关测试：`npx vitest run test/domains/<runtime>/`
+4. 如需验证启动器：`pnpm test:runtime-smoke` 或 `pnpm test:script-smoke`
+
+**修改 Skill 内容（`assets/skills/` 或 `assets/skills-zh/`）**：
+
+1. 先改中文版（`assets/skills-zh/`），确认后再改英文版（`assets/skills/`）
+2. 运行相关契约测试和 Prettier 检查
+3. 中英文完全同步后才能写 Changelog
+
+**修改 `.comet.yaml` 状态机字段**：
+
+1. 同步三处：`classic-state-command.ts`（set 白名单）、`classic-validate-command.ts`（schema）、`comet-scripts.test.ts`（测试 fixture）
+2. 运行 `pnpm build` 重新生成 bundle
+3. 运行 `classic-runtime.test.ts` 验证新鲜度
+
+**修改 `config/repository-layout.json`**：
+
+1. 同步更新架构 linter（`scripts/lint/architecture.mjs`）和本文件说明
+2. 运行 `pnpm lint:architecture` 验证
+
+### 提交前验证
+
+根据改动范围选择检查；不要求每个提交机械地运行全部命令（CI 会执行完整检查）：
+
+- 小范围改动：`npx vitest run <相关测试>` + `prettier --write <受影响文件>`
+- 单一模块：对应测试 + `pnpm lint` + `pnpm format:check`
+- 跨模块/Runtime/发布准备：`pnpm build && pnpm lint && pnpm format:check && pnpm test`
+- 纯文档/Skill 内容：相关契约测试 + Prettier 检查
+
+仓库已配置 Git pre-commit 钩子（husky + lint-staged），每次 `git commit` 会自动对 `app/`、`domains/`、`platform/`、`scripts/`、`test/`、`.github/`、`config/` 下的暂存源文件运行 `prettier --write`（与 CI `format:check` 范围一致；冻结的 `test/fixtures/` 除外），编辑器无关，所有贡献者生效。
+
+注：本地 Windows 若 `core.autocrlf=true`，未改动的旧文件可能因 CRLF 被 `prettier --check` 误报；钩子只处理暂存文件，不受影响，旧文件下次编辑时会自动转为 LF。
 
 ## Classic runtime 脚本规范
 

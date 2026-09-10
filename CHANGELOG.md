@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to @rpamis/comet will be documented in this file.
+All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ## What's Changed [0.4.1] - 2026-09-10
 
@@ -16,6 +16,7 @@ All notable changes to @rpamis/comet will be documented in this file.
 
 ### Fixed
 
+- **OpenCode Enterprise Guard tool interception**: Avoid blocking non-mutating tools like `skill` and `question` as unknown mutating tools, auditing only command execution and file mutations while fast-pathing out-of-scope tools in the OpenCode plugin entry.
 - **Global initialization**: Preserve configured workflows, the default workflow, and memory and workflow policies when repeating initialization without explicitly replacing them.
 - **Native uninstall**: Clean up empty Native runtime directories, including sequential uninstall of a mixed Native and Classic installation, while preserving user content and active state.
 - **Memory command failures**: Report remote memory retrieval, management, and policy-update failures instead of empty results or false success, while keeping automatic context collection nonblocking.
@@ -23,7 +24,6 @@ All notable changes to @rpamis/comet will be documented in this file.
 - **Update language preservation**: Keep English installations in English during updates even when their Skills include Chinese examples, and retain support for Chinese and partially installed Skill sets.
 - **Installation JSON output**: Keep OpenSpec and Superpowers progress on stderr so external tool notices cannot corrupt structured CLI results.
 - **Knowledge discovery**: Preserve Markdown retrieval when a project's parent directory is accessed through a filesystem alias, including macOS temporary directories, while continuing to exclude project-external links.
-
 - **Plugin settings**: Preserve each project's enabled or disabled state when multiple Dashboard or CLI instances update shared plugin settings, and prevent concurrent enable or disable operations from undoing an uninstall.
 - **Personal Memory**: Allow users to forget global memories created in a project using another language while preserving validation of newly proposed content.
 - **Uninstall status**: Return a failing exit status when current-project or all-projects cleanup is incomplete, including project inspection failures, so automation can reliably detect failures.
@@ -34,6 +34,7 @@ All notable changes to @rpamis/comet will be documented in this file.
 - **Memory Git synchronization**: Support the first push to an empty remote and the first connection to an existing memory branch, preserve remote content, and distinguish actual merge conflicts from connection failures.
 - **LangSmith evaluation**: Install the selected suite's Python dependencies automatically and report missing SDKs before running an evaluation without its expected experiment records and scores.
 - **Knowledge command failures**: Show remote service diagnostics instead of presenting outages as empty search results, and return failing exit statuses for unsuccessful knowledge operations and memory synchronization.
+- **Superpowers project-scoped installation**: Run temporary npm package installations in an isolated temporary directory when extracting project-scoped skills, avoiding conflicts with package manager symlink layouts (such as pnpm virtual store) and preventing host repository filesystem errors.
 
 ### Security
 
@@ -59,17 +60,85 @@ All notable changes to @rpamis/comet will be documented in this file.
 - **Native revision recovery guidance**: Published-spec write rejections point to the current change's supported revision path, and recovery preserves actionable protocol diagnostics for incompatible state schemas.
 - **Native verification reports**: Failed and blocked verification results direct users to repair or resolve blockers before verification resumes, instead of asking them to confirm an unsuccessful result.
 
-## What's Changed [0.4.0-rc.5] - 2026-09-05
+## What's Changed [0.4.0-rc.5] - 2026-09-07
 
 ### Added
 
+- **Upstream Comet 0.4.0-rc.5 synchronization**: Integrated upstream master commits up to 0.4.0-rc.5 into the enterprise branch, reconciling core runtime updates, memory/knowledge capabilities, and unified supervisor subtask acceptance while preserving enterprise guard runtimes and SDD mappings.
 - **Host Agent knowledge review**: Agents can review queued project experience with `comet knowledge review` and submit reusable lessons without configuring another model or API key; new lessons remain trial records until successful use.
 - **Task knowledge adoption evidence**: Agents can attach the concrete decision and actual verification result to context feedback; the Dashboard shows this evidence separately from delivery, and feedback survives retries and restarts without counting repeated submissions twice.
+- **Classic SDD enterprise lifecycle integration**: Integrated IAM identity authentication and DOP requirement fetching into Classic workflow start and end phases. Flow start verifies credentials via `iam auth status --json` (stopping on unauthorized) and injects requirement context (`summary`, `description`, `storyAC`, `subSystems`, and `userStory`) via `dop change view <change-id> --json`. Flow end finalizes external changes via `dop change done <change-id>` upon successful PR delivery with non-rollback fault tolerance.
+
+### Changed
+
+- **Superpowers installation from npm superpowers-zh**: Switched Superpowers dependency installation from the remote GitHub repository clone (`obra/superpowers` via `@vercel/skills`) to the npm package `superpowers-zh`. Skills are now distributed directly from the bundled npm dependency, providing reliable offline-capable distribution, full Chinese skill localization, and additional workflow skills while strictly excluding `using-superpowers` to preserve Comet as the sole workflow controller.
 
 ### Fixed
 
 - **Project registry recovery**: Automatically removes missing temporary projects leaked by older update tests when the upgraded CLI or Dashboard reads the registry, while preserving ordinary missing projects and inaccessible directories.
 - **Native Supervisor child status**: Dashboard child rows show localized verification, integration, archive, and re-verification states with consistent colors and no longer mistake a missing workflow phase for an uncreated child.
+- **Personal Memory lifecycle**: Independent observations retain their own candidate identities, repeated evidence no longer creates duplicate trial records, phase-specific memories remain manageable, and permanent removal clears retained observation text.
+- **Project Knowledge learning and discovery**: Tasks can discover relevant scoped references before their target file is known and expand their conclusions, applicability, sources, and verification commands. Chinese task queries preserve technical words and mixed-language identifiers. Explicit scope mismatches remain excluded. Source refresh no longer promotes untested lessons, and workflow checkpoints no longer create generic proven policies. Native learning excludes archive previews and preserves current verification evidence.
+- **Memory and knowledge Dashboard**: Failed saves preserve drafts, knowledge categories match the selected view, keyboard navigation works across knowledge tabs, and memory actions remain visible at desktop widths. Retrieval results can be scrolled and opened in readable detail previews, knowledge corrections use a wider centered editor, and personal memory uses clearer empty-state and file labels.
+- **Project Knowledge models and retrieval corpus**: Project models now describe each source module through stable, readable entry, dependency, caller, registration, and test evidence; the Dashboard lists only Markdown that actually participates in retrieval, keeps code evidence in record details, automatically compacts duplicate generated history, and restores missing or stale model records through one shared readiness flow.
+
+## What's Changed [0.4.0-rc.4] - 2026-09-04
+
+### Changed
+
+- **Dashboard theme text contrast**: Dashboard form placeholders, disabled text, workflow summary status badges, and Ant Design component states now use readable light- and dark-theme colors, with active and archived workflow states remaining visually distinct.
+- **Native Archive continuation**: Archive-ready changes now start with one complete `--dry-run`; isolated branches receive explicit finish choices and exact follow-up commands, so Agents do not guess flags or repeat status probes.
+- **Archive preflight guidance**: Dry-run now reports workspace and generated-file blockers together with the next confirmed command, preserving user-owned files and keeping dry-run and confirmed behavior aligned.
+- **Memory and Project Knowledge Dashboard**: Current records, history, tombstones, indexed sources, evidence, version chains, empty states, and real query statistics are now shown separately so users can tell what was learned, what is only searchable, and what is no longer active.
+
+### Fixed
+
+- **Native Shape confirmation**: Native now persists a separate user-confirmation step before Build, rejects early or stale `--confirmed` commands, and returns changed Shape artifacts for renewed review. Unresolved blocking questions recorded from vague requirements or supplied documents prevent confirmation preparation instead of being skipped.
+- **Dependency security updates**: Updated the transitive `fast-uri` dependency to `3.1.7` and synchronized npm and pnpm lockfiles to remove vulnerable `browserslist` and `fast-uri` resolutions, addressing the reported URL normalization, SSRF, and Browserslist stats-processing risks.
+- **Project Knowledge freshness**: Streamed content digests now validate sources of any size and detect changes even when file size and modification time are unchanged; Dashboard refreshes invalidate stale records before rebuilding models and reports project-wide totals independently of its display limit.
+- **Memory deletion and status**: Forgotten content is removed from Markdown projections during reconciliation, and forgotten or conflicted records are no longer reported as active personal memory when retained for history or audit purposes.
+- **Native legacy Supervisor recovery**: A stale, never-started v2 execution overlay no longer overrides completed `children.v1` portable history; Native detects the conflict, removes only the exact empty overlay, and accepts the portable parent handoff without manual file deletion.
+- **Native Supervisor cleanup**: Supervisor Change Archive now deletes integrated Child and integration branches against the delivered target branch, so cleanup completes from a separate change worktree without manual branch removal.
+- **Archive-owned state finalization**: Native Archive now includes the active change's state and verification artifacts in its authorized archive commit, avoiding manual commits and retry loops.
+- **Task completion handoff**: Native continuation guidance reuses the original task context instead of probing undeclared environment variables.
+
+## What's Changed [0.4.0-rc.3] - 2026-09-03
+
+### Fixed
+
+- **Devin Desktop OpenSpec compatibility**: `comet init`, `comet update`, and OpenSpec integration now use Devin Desktop's `.devin/` Skill root while keeping `windsurf` as the stable platform selector and recognizing legacy `.windsurf/` installations.
+- **Global configuration recovery**: `comet init` and a Home-directory `comet update` now recover known legacy or project-schema global configurations automatically, without asking users to edit or delete `.comet/config.yaml`.
+- **Windows atomic writes**: Comet now refreshes temporary-file and Native lock metadata after a successful close, so NTFS close-time metadata finalization no longer makes Comet treat its own files as externally changed. Identity and post-close mutation checks remain enforced before publish or release.
+- **Dashboard Project Knowledge consistency**: Dashboard now uses the same default Local Project Knowledge cache as `comet task` and `comet knowledge`, so rebuilt records and indexed Markdown sources appear in the plugin center and records created there are available to CLI retrieval. Records from the former `~/.comet/plugins/knowledge-cache` Dashboard location are imported into the canonical cache during upgrade.
+- **Native Supervisor final verification**: Supervisor Changes can now include committed parent-level fixes made after the last Child integration. Final verification records the exact forward integration commit it checked, and continuing a Change automatically repairs an interrupted record or reruns final Verify when needed, so affected users do not need to edit Runtime state or reset their branch while rewritten or divergent integration history remains blocked.
+- **Native Supervisor repair recovery**: When final parent verification fails Spec-derived acceptance after the original Children have integrated, repair Children can now carry those failed acceptance items through automatic Shape reconfirmation. Existing integrated Child history remains intact, so users who upgrade Comet can continue the workflow without editing Runtime state or repeating completed Child work.
+- **Native Verifier retry**: When independent verification is unavailable, Native now offers an immediate retry alongside the explicit degraded-result choice, preserving the current candidate, completed checks, and repair scope so users can continue without restoring files, starting a separate service, or configuring a callback.
+
+## What's Changed [0.4.0-rc.2] - 2026-09-02
+
+### Added
+
+- **Enterprise CLI provisioning**: `comet init` now verifies `iam`, `dop`, and the enterprise `gitee-cli` compatible `gh` command, installs missing scoped CLI packages from the configured enterprise npm registry, rechecks their executables, and reports the IAM login follow-up without modifying existing CLI configuration.
+- **Package rename to @cli-tools/yuan-comet**: Renamed the published npm package to `@cli-tools/yuan-comet` to distinguish this enterprise distribution from upstream Comet while preserving compatibility across update checks and installation targets.
+- **Enterprise SDD skill name projection**: Platform skill installation now projects user-facing skills to the `/sdd-*` prefix (e.g. `/sdd`, `/sdd-open`, `/sdd-native`, `/sdd-classic`, `/sdd-design`, `/sdd-build`, `/sdd-verify`, `/sdd-archive`) across IDE and agent platforms (Cursor, Claude Code, OpenCode, Windsurf, Pi), transforming frontmatter names and in-file slash commands while preserving canonical upstream assets for low-conflict upstream synchronization.
+- **Enterprise Guard managed runtime and integrity verification**: Enterprise Gateway, Runner, and platform plugin bridges now install into a versioned, tamper-evident managed runtime directory with manifest schema validation and sha256 checksums. Updates write and verify new runtime versions before atomically switching active pointers, and doctor inspects file digests, permissions, protocol compatibility, tool coverage, and deduplication.
+- **Enterprise Guard for OpenCode**: `comet init` and `comet update` now install an auto-discovered managed OpenCode plugin bridge and Runner. Bash commands are evaluated before execution to block high-risk operations such as embedded credentials or private keys, filesystem-root recursive deletion, and force-push commands. `comet doctor --repair` restores missing or outdated managed files, while uninstall removes only Comet-owned files and preserves user plugins and configuration.
+- **Enterprise Guard Gateway protocol suite**: Extended the unified Composite Gateway across verified command-hook platforms (Codex, Amazon Q Developer, Qwen Code, Gemini CLI, GitHub Copilot, Trae, Trae CN, Oh My Pi, DeepSeek Harness) with dedicated input codecs, secondary deserialization, and decision rendering, automatically retiring legacy dual Hooks while preserving user custom configurations.
+- **Enterprise Guard for Claude Code**: `comet init` and `comet update` now install one managed `PreToolUse` Gateway that evaluates high-risk writes, embedded credentials or private keys, filesystem-root recursive deletion, and force-push commands before Comet workflow routing. Guard evaluation and required audit persistence fail closed, `comet doctor --repair` restores missing project or user-local runtimes before retiring legacy Hooks, uninstall preserves user entries, and coverage reports peer-Hook ordering limits as best-effort with CI fallback.
+- **Enterprise Guard audit integrity**: Guard findings are now redacted, append safely under concurrent Hooks, and expose a schema-validated reader for review and CI consumers; corruption or a recorded hard denial blocks review.
+- **Git native boundary and CI findings enforcement**: `pre-commit` and `pre-push` boundary checks now prevent staging sensitive files (.env) or hard-coded secrets and block force-pushing to protected branches (master, main, enterprise/main, release/\*). The boundary checker is published as a precompiled, self-contained runtime bundle (`comet-git-boundary.mjs`) verified by manifest checksums, completely eliminating runtime dependencies on dynamic `esbuild` compilation. CI workflows automatically consume `.comet/enterprise-guard/findings.jsonl` via the validated findings reader to fail immediately on unresolved HARD denials.
+- **Enterprise SDD review findings consumption**: `/sdd-review` (`/comet-review`) now explicitly inspects Enterprise Guard findings and exceptions, guiding agents to run `pnpm run check:enterprise-guard` or read `.comet/enterprise-guard/findings.jsonl`, request changes on unresolved HARD denials or corrupt logs, and record audit trail notices for approved exceptions without treating them as passed security checks.
+
+### Changed
+
+- **Enterprise Guard repair and uninstall boundaries**: `comet doctor --repair` restores corrupted, missing, outdated, or duplicate managed files through atomic switch semantics, while `uninstall` strictly purges only managed runtime artifacts matching registered digests, preserving user custom hooks, third-party plugins, and audit findings.
+- **Enterprise Guard platform profiles and lifecycle**: Generalised hook lifecycle management to discover platform profiles dynamically, supporting multi-platform composite gateway installation, inspection, and idempotent cleanup across supported toolsets.
+- **Enterprise Guard policy contract**: Claude Guard evaluation now emits versioned per-rule results for bounded write and shell inspection, fails closed on incomplete input, supports time-bounded approved exceptions, and verifies source, contract, and published runtime alignment in CI.
+
+### Fixed
+
+- **macOS worktree and uninstall paths**: Hook worktree routing and uninstall reports now reconcile macOS logical and physical temporary paths, so linked worktree selection remains correct and preserved-content messages use the path supplied by the user.
+- **Read-only trust anchors**: Filesystem read-only mount responses now count as non-writable during trusted-file verification instead of aborting the capability check.
 - **Personal Memory lifecycle**: Independent observations retain their own candidate identities, repeated evidence no longer creates duplicate trial records, phase-specific memories remain manageable, and permanent removal clears retained observation text.
 - **Project Knowledge learning and discovery**: Tasks can discover relevant scoped references before their target file is known and expand their conclusions, applicability, sources, and verification commands. Chinese task queries preserve technical words and mixed-language identifiers. Explicit scope mismatches remain excluded. Source refresh no longer promotes untested lessons, and workflow checkpoints no longer create generic proven policies. Native learning excludes archive previews and preserves current verification evidence.
 - **Memory and knowledge Dashboard**: Failed saves preserve drafts, knowledge categories match the selected view, keyboard navigation works across knowledge tabs, and memory actions remain visible at desktop widths. Retrieval results can be scrolled and opened in readable detail previews, knowledge corrections use a wider centered editor, and personal memory uses clearer empty-state and file labels.
@@ -170,6 +239,18 @@ All notable changes to @rpamis/comet will be documented in this file.
 ### Removed
 
 - **Legacy Native verification bookkeeping**: New Native changes no longer expose the old project-wide scan, checkpoint, check, evidence, and receipt command chain; legacy active changes migrate conservatively and archived legacy changes remain read-only.
+
+## What's Changed [0.4.0-beta.20] - 2026-08-27
+
+### Changed
+
+- **CodeGraph diagnostics**: `comet init` and `comet doctor` now distinguish the CodeGraph CLI installation, current project index, Agent MCP registration, and effective Agent capability instead of presenting them as one combined status.
+- **Classic workflow dispatch**: `/comet` can now implicitly invoke the Classic phase and preset Skills it needs to continue a workflow, including on hosts that support model-invoked Skills such as Qwen Code.
+
+### Fixed
+
+- **Native Portable child discovery**: valid Portable v4 change documents larger than 256 KiB are no longer rejected by an arbitrary reader limit during linked-worktree child discovery.
+- **Native Archive-ready requirement revisions**: user-visible requirement changes can now return a Native change from Archive-ready to Shape, invalidating stale verification and Archive authorization while preserving the change workspace.
 
 ## What's Changed [0.4.0-beta.19] - 2026-08-21
 

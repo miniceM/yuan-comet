@@ -55,6 +55,21 @@ describe('repository layout registry', () => {
     expect(resolveRepositoryPath(layout.entryRuntime.outputs.runtime)).toBe(
       path.resolve('assets', 'skills', 'comet', 'scripts', 'comet-entry-runtime.mjs'),
     );
+    expect(layout.enterpriseGuardRuntime).toEqual({
+      manifest: 'assets/skills/comet/enterprise-guard-manifest.json',
+      entries: {
+        gateway: 'domains/enterprise-guard/enterprise-gateway-entry.ts',
+        gitBoundary: 'domains/enterprise-guard/git-boundary-entry.ts',
+        runner: 'domains/enterprise-guard/enterprise-runner-entry.ts',
+        opencodePlugin: 'domains/enterprise-guard/opencode-plugin-entry.ts',
+      },
+      outputs: {
+        gateway: 'assets/skills/comet/scripts/comet-enterprise-gateway.mjs',
+        gitBoundary: 'assets/skills/comet/scripts/comet-git-boundary.mjs',
+        runner: 'assets/skills/comet/scripts/comet-enterprise-runner.mjs',
+        opencodePlugin: 'assets/skills/comet/plugins/comet-enterprise-guard.mjs',
+      },
+    });
   });
 
   it('tracks active source roots', () => {
@@ -72,6 +87,8 @@ describe('repository layout registry', () => {
       'comet-plugin',
       'dashboard',
       'engine',
+      'enterprise-cli',
+      'enterprise-guard',
       'eval',
       'factory',
       'integrations',

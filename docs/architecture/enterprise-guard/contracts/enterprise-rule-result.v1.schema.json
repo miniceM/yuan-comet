@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/miniceM/comet/docs/architecture/enterprise-guard/contracts/enterprise-rule-result.v1.schema.json",
+  "title": "Enterprise Rule Result v1",
+  "description": "The deterministic result of evaluating exactly one Enterprise Guard rule against one normalized hook input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ruleId",
+    "ruleVersion",
+    "enforcement",
+    "decision",
+    "reason",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "comet.enterprise-rule-result.v1"
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^EG-(HARD|SOFT)-[A-Z]+-[0-9]{3}$"
+    },
+    "ruleVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "enforcement": {
+      "enum": ["hard", "soft"]
+    },
+    "decision": {
+      "enum": ["allow", "deny", "warn", "abstain"]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "subject"],
+        "properties": {
+          "kind": {
+            "enum": ["path", "command", "write-fragment", "parse", "policy", "exception"]
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "redacted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "exceptionId": {
+      "type": ["string", "null"]
+    },
+    "inputDigest": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

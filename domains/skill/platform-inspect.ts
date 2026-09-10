@@ -21,6 +21,7 @@ import {
   readManifest,
   renderOmpHookModule,
   resolveInstalledHookMatcher,
+  type HookConfig,
 } from './platform-install.js';
 import { readJsonObjectFile } from './json-object.js';
 import type { InitWorkflowSelection } from '../comet-entry/types.js';
@@ -434,16 +435,15 @@ async function inspectKiroHooks(
   };
 }
 
-export async function inspectCometHooksForPlatform(
+/** Inspect one owner's Hook scripts without interpreting their business semantics. */
+export async function inspectManagedHooksForPlatform(
   baseDir: string,
   platform: Platform,
   scope: InstallScope,
-  _workflowSelection: InitWorkflowSelection = 'classic',
+  hooksConfig: Record<string, HookConfig>,
 ): Promise<HookInspectionResult> {
   if (!platform.supportsHooks || !platform.hookFormat) return { present: false };
 
-  const manifest = await readManifest();
-  const hooksConfig = manifest.hooks ?? {};
   const scriptRelPaths = Object.keys(hooksConfig);
   if (scriptRelPaths.length === 0) return { present: false };
 
@@ -453,12 +453,13 @@ export async function inspectCometHooksForPlatform(
       const context = { platformId: platform.id, scope };
       const invocation =
         platform.id === 'claude'
-          ? buildHookInvocation(baseDir, skillsDir, scriptRelPath, context)
+          ? buildHookInvocation(baseDir, skillsDir, scriptRelPath, context, config.arguments)
           : undefined;
       return {
         scriptRelPath,
         command:
-          invocation?.command ?? buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+          invocation?.command ??
+          buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
         ...(invocation ? { args: invocation.args } : {}),
         matcher: config.matcher,
       };
@@ -671,4 +672,14 @@ export async function inspectCometHooksForPlatform(
     }
   }
   return inspection;
+}
+
+export async function inspectCometHooksForPlatform(
+  baseDir: string,
+  platform: Platform,
+  scope: InstallScope,
+  _workflowSelection: InitWorkflowSelection = 'classic',
+): Promise<HookInspectionResult> {
+  const manifest = await readManifest();
+  return inspectManagedHooksForPlatform(baseDir, platform, scope, manifest.hooks ?? {});
 }

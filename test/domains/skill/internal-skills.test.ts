@@ -107,6 +107,7 @@ describe('internal Skill assets', () => {
           skillPath === 'comet/SKILL.md' ||
           skillPath.startsWith('comet-review/') ||
           skillPath === 'comet/scripts/comet-entry-runtime.mjs' ||
+          skillPath === 'comet/scripts/comet-enterprise-gateway.mjs' ||
           skillPath === 'comet/scripts/comet-hook-router.mjs' ||
           skillPath.startsWith('comet-memory/') ||
           skillPath.startsWith('comet-native/') ||

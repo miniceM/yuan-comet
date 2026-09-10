@@ -1,6 +1,7 @@
 import { execFileSync } from 'child_process';
 import os from 'os';
 import path from 'path';
+import { createRequire } from 'module';
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises';
 
 import { printCommandErrorDetails } from '../../platform/process/command-error.js';
@@ -72,17 +73,19 @@ const WORKBUDDY_PLATFORM_ID = 'workbuddy';
 const OH_MY_PI_PLATFORM_ID = 'oh-my-pi';
 const DSH_PLATFORM_ID = 'dsh';
 const GROK_PLATFORM_ID = 'grok';
-const STAGE_AGENT = 'claude-code';
-const SUPERPOWERS_SOURCE = 'obra/superpowers';
+const SUPERPOWERS_PACKAGE_NAME = 'superpowers-zh';
+const SUPERPOWERS_SOURCE = 'superpowers-zh';
 const EXCLUDED_SUPERPOWERS_SKILL = 'using-superpowers';
-// The Skills CLI accepts an allowlist but has no exclude flag. Keep this list
-// aligned with the public skill directories in obra/superpowers so the
-// bootstrap skill never enters a project or user-scoped installation.
 const SUPERPOWERS_SKILL_NAMES = [
   'brainstorming',
+  'chinese-code-review',
+  'chinese-commit-conventions',
+  'chinese-documentation',
+  'chinese-git-workflow',
   'dispatching-parallel-agents',
   'executing-plans',
   'finishing-a-development-branch',
+  'mcp-builder',
   'receiving-code-review',
   'requesting-code-review',
   'subagent-driven-development',
@@ -90,19 +93,23 @@ const SUPERPOWERS_SKILL_NAMES = [
   'test-driven-development',
   'using-git-worktrees',
   'verification-before-completion',
+  'workflow-runner',
   'writing-plans',
   'writing-skills',
 ] as const;
 export const STAGED_SUPERPOWERS_MANIFEST_FILE = '.comet-superpowers.json';
 
-function buildSuperpowersInstallArgs(): string[] {
-  return [
-    'skills',
-    'add',
-    SUPERPOWERS_SOURCE,
-    '-y',
-    ...SUPERPOWERS_SKILL_NAMES.flatMap((skillName) => ['--skill', skillName]),
-  ];
+function getNpmExecutable(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+function buildSuperpowersInstallArgs(scope: InstallScope): string[] {
+  const args = ['install'];
+  if (scope === 'global') {
+    args.push('-g');
+  }
+  args.push(SUPERPOWERS_PACKAGE_NAME);
+  return args;
 }
 
 function buildSuperpowersInstallCommand(
@@ -115,72 +122,55 @@ function buildSuperpowersInstallCommand(
     throw new Error(`Unknown platform IDs: ${unknownIds.join(', ')}`);
   }
 
-  const agentNames = [
-    ...new Set(
-      platformIds.map((id) => SKILLS_AGENT_MAP[id]).filter((name): name is string => Boolean(name)),
-    ),
-  ];
-
-  if (agentNames.length === 0) {
-    throw new Error(`No skills CLI agent names resolved for platforms: ${platformIds.join(', ')}`);
-  }
-
-  const args = buildSuperpowersInstallArgs();
-  if (scope === 'global') {
-    args.push('-g');
-  }
-  for (const name of agentNames) {
-    args.push('--agent', name);
-  }
-  return { command: getNpxExecutable(), args };
+  return { command: getNpmExecutable(), args: buildSuperpowersInstallArgs(scope) };
 }
 
 function buildLingmaSuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
 function buildZCodeSuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
 function buildMimoCodeSuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
 function buildWorkBuddySuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
 function buildOhMyPiSuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
 function buildDshSuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
 function buildGrokSuperpowersStageCommand(): { command: string; args: string[] } {
   return {
-    command: getNpxExecutable(),
-    args: [...buildSuperpowersInstallArgs(), '--agent', STAGE_AGENT],
+    command: getNpmExecutable(),
+    args: ['install', SUPERPOWERS_PACKAGE_NAME],
   };
 }
 
@@ -188,8 +178,32 @@ function isExcludedSuperpowersSkill(name: string): boolean {
   return name.toLowerCase() === EXCLUDED_SUPERPOWERS_SKILL;
 }
 
-function getNpxExecutable(platform: NodeJS.Platform = process.platform): string {
-  return platform === 'win32' ? 'npx.cmd' : 'npx';
+async function findSuperpowersSkillsDir(searchBases: string[]): Promise<string | null> {
+  for (const base of searchBases) {
+    const candidates = [
+      path.join(base, 'skills'),
+      path.join(base, 'node_modules', SUPERPOWERS_PACKAGE_NAME, 'skills'),
+      path.join(base, '.claude', 'skills'),
+    ];
+    for (const candidate of candidates) {
+      if (await fileExists(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  try {
+    const req = createRequire(import.meta.url);
+    const pkgJsonPath = req.resolve(`${SUPERPOWERS_PACKAGE_NAME}/package.json`);
+    const skillsDir = path.join(path.dirname(pkgJsonPath), 'skills');
+    if (await fileExists(skillsDir)) {
+      return skillsDir;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
 }
 
 async function copyDirectoryContents(srcDir: string, destDir: string): Promise<string[]> {
@@ -198,11 +212,15 @@ async function copyDirectoryContents(srcDir: string, destDir: string): Promise<s
   const skillNames: string[] = [];
   for (const entry of entries) {
     if (entry.isDirectory() && isExcludedSuperpowersSkill(entry.name)) continue;
-    await cp(path.join(srcDir, entry.name), path.join(destDir, entry.name), {
-      recursive: true,
-      force: true,
-      dereference: true,
-    });
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (path.resolve(srcPath) !== path.resolve(destPath)) {
+      await cp(srcPath, destPath, {
+        recursive: true,
+        force: true,
+        dereference: true,
+      });
+    }
     if (entry.isDirectory() && !entry.name.startsWith('.')) {
       skillNames.push(entry.name);
     }
@@ -252,7 +270,12 @@ async function readStagedSuperpowersSkillNames(
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
     const record = parsed as Record<string, unknown>;
-    if (record.source !== SUPERPOWERS_SOURCE || !Array.isArray(record.skills)) continue;
+    if (
+      (record.source !== SUPERPOWERS_SOURCE && record.source !== 'obra/superpowers') ||
+      !Array.isArray(record.skills)
+    ) {
+      continue;
+    }
     for (const name of record.skills) {
       if (typeof name !== 'string' || name.length === 0) continue;
       if (name.includes('/') || name.includes('\\') || name === '.' || name === '..') continue;
@@ -290,11 +313,14 @@ async function copyDshSuperpowersContents(
     const relative = `skills/${entry.name}`;
     const destination = path.join(destDir, entry.name);
     if ((await fileExists(destination)) && !owned.has(relative)) continue;
-    await cp(path.join(srcDir, entry.name), destination, {
-      recursive: true,
-      force: true,
-      dereference: true,
-    });
+    const srcPath = path.join(srcDir, entry.name);
+    if (path.resolve(srcPath) !== path.resolve(destination)) {
+      await cp(srcPath, destination, {
+        recursive: true,
+        force: true,
+        dereference: true,
+      });
+    }
     copied.push(relative);
   }
   await addDshOwnedPaths(baseDir, platform, scope, 'superpowers', copied);
@@ -418,13 +444,15 @@ async function stageAndCopySuperpowers(
       shell: process.platform === 'win32',
     });
 
-    const stagedSkillsDir = path.join(tempDir, '.claude', 'skills');
+    const srcSkillsDir =
+      (await findSuperpowersSkillsDir([tempDir, projectPath])) ??
+      path.join(tempDir, '.claude', 'skills');
     const baseDir = scope === 'global' ? os.homedir() : projectPath;
     if (platformId === DSH_PLATFORM_ID) {
-      await copyDshSuperpowersContents(stagedSkillsDir, baseDir, platform, scope);
+      await copyDshSuperpowersContents(srcSkillsDir, baseDir, platform, scope);
     } else {
       const platformSkillsDir = path.join(baseDir, getPlatformSkillsDir(platform, scope), 'skills');
-      const skillNames = await copyDirectoryContents(stagedSkillsDir, platformSkillsDir);
+      const skillNames = await copyDirectoryContents(srcSkillsDir, platformSkillsDir);
       await writeStagedSuperpowersManifest(
         getStagedSuperpowersManifestPath(baseDir, getPlatformSkillsDir(platform, scope)),
         skillNames,
@@ -467,18 +495,47 @@ async function installSuperpowersForPlatforms(
 
   if (skillsCliPlatformIds.length > 0) {
     const command = buildSuperpowersInstallCommand(projectPath, scope, skillsCliPlatformIds);
+    const baseDir = scope === 'global' ? os.homedir() : projectPath;
+    const isProjectScope = scope === 'project';
+    const tempDir = isProjectScope
+      ? await mkdtemp(path.join(os.tmpdir(), 'comet-skills-cli-superpowers-'))
+      : null;
 
     try {
       execFileSync(command.command, command.args, {
-        cwd: projectPath,
+        cwd: tempDir ?? baseDir,
         stdio: ['inherit', 2, 'inherit'],
         timeout: SUPERPOWERS_INSTALL_TIMEOUT_MS,
         shell: process.platform === 'win32',
       });
+
+      const srcSkillsDir = await findSuperpowersSkillsDir(
+        tempDir ? [tempDir, projectPath, baseDir] : [projectPath, baseDir],
+      );
+      if (srcSkillsDir) {
+        for (const platformId of skillsCliPlatformIds) {
+          const platform = PLATFORMS.find((p) => p.id === platformId);
+          if (!platform) continue;
+          const platformSkillsDir = path.join(
+            baseDir,
+            getPlatformSkillsDir(platform, scope),
+            'skills',
+          );
+          const skillNames = await copyDirectoryContents(srcSkillsDir, platformSkillsDir);
+          await writeStagedSuperpowersManifest(
+            getStagedSuperpowersManifestPath(baseDir, getPlatformSkillsDir(platform, scope)),
+            skillNames,
+          );
+        }
+      }
     } catch (error) {
       console.error(`    Superpowers install failed: ${(error as Error).message}`);
       printCommandErrorDetails(error);
       failed = true;
+    } finally {
+      if (tempDir) {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     }
   }
 
@@ -535,4 +592,5 @@ export {
   removeStagedSuperpowersManifests,
   SKILLS_AGENT_MAP,
   SUPERPOWERS_SKILL_NAMES,
+  SUPERPOWERS_SOURCE,
 };

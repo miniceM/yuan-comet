@@ -982,7 +982,7 @@ describe('openspec', () => {
           const probe = path.join(tmpDir, '.junction-probe');
           try {
             fs.symlinkSync(outsideRoot, probe, process.platform === 'win32' ? 'junction' : 'dir');
-            fs.rmSync(probe, { force: true });
+            fs.rmSync(probe, { force: true, recursive: true });
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'EPERM') return;
             throw error;
@@ -1081,7 +1081,7 @@ describe('openspec', () => {
           const probe = path.join(tmpDir, '.junction-probe');
           try {
             fs.symlinkSync(outsideRoot, probe, process.platform === 'win32' ? 'junction' : 'dir');
-            fs.rmSync(probe, { force: true });
+            fs.rmSync(probe, { force: true, recursive: true });
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'EPERM') return;
             throw error;
@@ -1173,7 +1173,7 @@ describe('openspec', () => {
           const probe = path.join(tmpDir, '.junction-probe');
           try {
             fs.symlinkSync(outsideRoot, probe, process.platform === 'win32' ? 'junction' : 'dir');
-            fs.rmSync(probe, { force: true });
+            fs.rmSync(probe, { force: true, recursive: true });
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'EPERM') return;
             throw error;

@@ -200,6 +200,23 @@ async function syncDirectory(directory: string): Promise<void> {
   }
 }
 
+async function replaceFileAtomically(temporary: string, file: string): Promise<void> {
+  const maxAttempts = 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fs.rename(temporary, file);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt < maxAttempts && (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES')) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 15));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 async function atomicWriteContained(
   file: string,
   content: string | Uint8Array,
@@ -259,7 +276,7 @@ async function atomicWriteContained(
       await publishFileExclusively(temporary, file);
       await fs.unlink(temporary);
     } else {
-      await fs.rename(temporary, file);
+      await replaceFileAtomically(temporary, file);
     }
     await syncDirectory(directory);
   } catch (error) {

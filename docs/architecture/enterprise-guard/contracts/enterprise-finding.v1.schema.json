@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/miniceM/comet/docs/architecture/enterprise-guard/contracts/enterprise-finding.v1.schema.json",
+  "title": "Enterprise Guard Finding v1",
+  "description": "A redaction-safe audit record for one deny or warn rule result. It intentionally excludes raw commands, write fragments, reasons, and credential material.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "createdAt",
+    "ruleId",
+    "ruleVersion",
+    "enforcement",
+    "decision",
+    "tool",
+    "path",
+    "fingerprint",
+    "exceptionId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "comet.enterprise-finding.v1"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^EG-(HARD|SOFT)-[A-Z]+-[0-9]{3}$"
+    },
+    "ruleVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "enforcement": {
+      "enum": ["hard", "soft"]
+    },
+    "decision": {
+      "enum": ["deny", "warn"]
+    },
+    "tool": {
+      "type": ["string", "null"]
+    },
+    "path": {
+      "type": ["string", "null"]
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "exceptionId": {
+      "type": ["string", "null"]
+    }
+  }
+}

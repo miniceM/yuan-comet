@@ -2,6 +2,30 @@
 
 必须采用中文回答用户
 
+## 企业定制原则
+
+本项目为上游 comet 的 fork 子项目，在此基础上做优化时遵循以下前提：
+
+- 尽量不动上游现有源码结构：`app/`、`domains/`、`platform/`、`scripts/` 等现有模块与上游保持最小差异，不做重命名、移动或大面积改写，降低后续同步 upstream 的冲突成本。
+- 企业级定制的优化需求必须收敛到独立模块内实现（例如在 `domains/` 下新增独立 domain 模块），通过公开导出组合复用既有能力；禁止把定制逻辑散落嵌入上游模块内部。
+- 触达上游行为的接线点（如 Hook Router 接入、命令注册）只做最小侵入式挂载：单向 import 与注册，不回写上游实现。
+- 新增独立模块时按「项目结构规范」同步 `config/repository-layout.json`、架构 linter、对应 `test/domains/<domain>/` 测试目录和本节说明。
+
+## 上游同步与双主线（强制）
+
+本 fork 必须同时保留可精确同步的上游镜像和可发布的企业产品线；任何 Agent 或贡献者不得让同一分支同时承担这两个职责。
+
+```text
+upstream/master → origin/master → enterprise/main → codex/*、feature/*
+```
+
+- `master` 是上游镜像分支：只能以 `git merge --ff-only upstream/master` 同步，必须与 `upstream/master` 没有独有提交。严禁向其合入企业功能、常规 PR、发布版本或 release tag。
+- `enterprise/main` 是企业产品主线和 GitHub 默认分支：企业定制、版本号、`CHANGELOG.md`、release tag 与日常 PR 均以它为准。`codex/*`、`feature/*` 等短期分支只能从它创建并向它合入。
+- 每次上游更新分为两步：先快进同步 `master`；再从 `enterprise/main` 创建 `sync/upstream-<日期>`，把 `master` 显式合入并通过 PR 合回 `enterprise/main`。冲突只能在该同步分支处理，必须先解决源码与接线点，再重新构建生成 runtime 资产；禁止手工拼接生成的 `.mjs` bundle。
+- `upstream` remote 必须指向 `rpamis/comet`，`origin` 指向企业 fork。GitHub 的 **Sync fork** 只可用于镜像 `master`；不得把它用于企业产品线的上游集成。
+- 严禁使用 GitHub 的 **Discard commits** 清除企业提交，严禁以普通 merge 修复 `master` 的快进失败，严禁未经仓库管理员明确授权执行强推、重置 `master`、修改默认分支或远端分支保护。
+- 若 `master` 需要从既有企业分叉状态恢复为镜像，必须先在远端验证包含全部企业提交的 `enterprise/main`、备份分支与备份 tag；迁移及任何回滚均使用带预期 SHA 的 `--force-with-lease`，且由仓库管理员执行。
+
 ## 开发工作区保护
 
 开始修改前检查当前分支、比较基线、未提交文件和子模块状态。保留所有无关修改，不得通过 `reset`、`clean`、删除或格式化无关文件来换取检查通过。提交时只显式暂存本任务文件。

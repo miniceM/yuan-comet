@@ -65,7 +65,8 @@ async function currentProcessCanWrite(file: string): Promise<boolean> {
   } catch (error) {
     if (
       (error as NodeJS.ErrnoException).code === 'EACCES' ||
-      (error as NodeJS.ErrnoException).code === 'EPERM'
+      (error as NodeJS.ErrnoException).code === 'EPERM' ||
+      (error as NodeJS.ErrnoException).code === 'EROFS'
     ) {
       return false;
     }

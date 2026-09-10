@@ -11,9 +11,9 @@
   <a href="https://github.com/rpamis/comet/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rpamis/comet/ci.yml?branch=master&style=flat-square&label=CI" /></a>
   <a href="https://app.codecov.io/gh/rpamis/comet/tree/master"><img alt="codecov" src="https://img.shields.io/codecov/c/github/rpamis/comet/master?style=flat-square&label=coverage&color=%23E61A7A" /></a>
   <a href="https://deepwiki.com/rpamis/comet"><img alt="DeepWiki" src="https://img.shields.io/badge/DeepWiki-rpamis%2Fcomet-blue?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm version" src="https://img.shields.io/npm/v/@rpamis/comet?style=flat-square" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm total download count" src="https://img.shields.io/npm/dt/@rpamis/comet?style=flat-square&label=Downloads" /></a>
-  <a href="https://www.npmjs.com/package/@rpamis/comet"><img alt="npm monthly download count" src="https://img.shields.io/npm/dm/@rpamis/comet?style=flat-square&label=Downloads/mo" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm version" src="https://img.shields.io/npm/v/@cli-tools/yuan-comet?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm total download count" src="https://img.shields.io/npm/dt/@cli-tools/yuan-comet?style=flat-square&label=Downloads" /></a>
+  <a href="https://www.npmjs.com/package/@cli-tools/yuan-comet"><img alt="npm monthly download count" src="https://img.shields.io/npm/dm/@cli-tools/yuan-comet?style=flat-square&label=Downloads/mo" /></a>
   <a href="https://docs.comet.rpamis.com/"><img alt="Comet Docs" src="https://img.shields.io/badge/Docs-docs.comet.rpamis.com-FFD700?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://atomgit.com/rpamis/comet"><img alt="AtomGitStars" src="https://atomgit.com/rpamis/comet/star/badge.svg" /></a>
@@ -65,6 +65,7 @@ It allows you to use a toolchain to handle everything from requirements to archi
 - **Supervisor Changes for complex requirements** — Native can split work along real delivery boundaries, manage dependencies and readiness as a DAG, let multiple agents implement and verify in Runtime-created worktrees, and then integrate the results before the parent change's final acceptance.
 - **The stable core for long-running tasks** — Comet's Classic Spec mode combines OpenSpec and Superpowers into a five-phase flow with a state machine, phase checks, and scripts. It suits work that needs an explicit method and strong constraints; its permanent entry point is `/comet-classic`.
 - **A configuration-driven shared entry point** — `/comet` reads only the project's `.comet/config.yaml` and deterministically forwards to `/comet-native` or `/comet-classic`. It does not guess from task size or mix changes, state, or directories across workflows. `comet resume-probe` uses the same configuration to resume through the correct permanent entry point.
+- **Local Enterprise Guard for Claude Code and OpenCode** — `comet init` and `comet update` install one managed `PreToolUse` Gateway for Claude Code and a managed plugin bridge with Runner for OpenCode. Both check high-risk writes, credentials, recursive deletion, and force pushes before Comet workflow routing, and deny execution when policy evaluation or required audit persistence is unavailable. Because peer Hooks/plugins run in parallel without observing one another, coverage remains best-effort with CI fallback; see the [platform coverage report](docs/architecture/enterprise-guard/platform-coverage.md).
 - **Skill platform** — Comet can author reusable Skill packages and use `/comet-any` to organize them into distributable
   Bundles, so Skills you create can be distributed to coding platforms with one command, much like `comet init`.
 - **Eval platform** — Comet assesses your skills using scientific Rubric, Pass@k, and Pass^k scoring, ensuring skill evolution is based on scientific evidence rather than intuition. It supports integration with LangSmith assessments, bringing evaluation to real-world enterprise production environments. Its dual-agent architecture automates the assessment process in your production environment.
@@ -148,8 +149,10 @@ Requirements:
 - Git
 
 ```bash
-npm install -g @rpamis/comet
+npm install -g @cli-tools/yuan-comet
 ```
+
+The enterprise `comet init` checks `iam`, `dop`, and the enterprise Gitee CLI exposed as `gh`. Missing commands are installed at their pinned versions from the enterprise npm registry; fill in the registry in `domains/enterprise-cli/catalog.ts` or set `COMET_ENTERPRISE_NPM_REGISTRY`, and provide npm credentials through the deployment environment. Comet does not fall back to the public npm registry or modify your npm configuration. After installation, it reminds you to run `iam auth login --system <system>` and verify the result with `iam auth status --json`.
 
 ## Quick Start
 

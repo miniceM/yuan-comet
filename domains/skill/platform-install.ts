@@ -35,6 +35,7 @@ import {
 import { readWorkflowProjectConfigSnapshot } from '../workflow-contract/project-config-reader.js';
 import { writeWorkflowProjectConfigSource } from '../workflow-contract/project-config-writer.js';
 import { ensureProtectedProjectDirectory } from '../workflow-contract/protected-project-path.js';
+import { projectSkillContent, projectSkillPath, toProjectedSkillName } from './skill-mapping.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,8 @@ const __dirname = path.dirname(__filename);
 type HookConfig = {
   matcher: string;
   description: string;
+  /** Fixed command arguments owned by the Hook bundle, not user input. */
+  arguments?: string[];
 };
 
 type Manifest = {
@@ -68,6 +71,7 @@ const NATIVE_SHARED_SKILL_PATHS = new Set([
   'comet-review/SKILL.md',
   'comet-review/agents/openai.yaml',
   'comet/scripts/comet-entry-runtime.mjs',
+  'comet/scripts/comet-enterprise-gateway.mjs',
   'comet/scripts/comet-hook-router.mjs',
 ]);
 const RETIRED_COMET_OWNED_SKILL_PATHS = [
@@ -230,12 +234,17 @@ export function isManagedSkillPathForSelection(
   workflowSelection: InitWorkflowSelection,
 ): boolean {
   if (workflowSelection === 'both') return true;
-  if (workflowSelection === 'classic') return !skillPath.startsWith('comet-native/');
+  if (workflowSelection === 'classic') {
+    return !skillPath.startsWith('comet-native/') && !skillPath.startsWith('sdd-native/');
+  }
   return (
     NATIVE_SHARED_SKILL_PATHS.has(skillPath) ||
     skillPath.startsWith('comet-native/') ||
+    skillPath.startsWith('sdd-native/') ||
     skillPath.startsWith('comet-any/') ||
-    skillPath.startsWith('comet-memory/')
+    skillPath.startsWith('sdd-any/') ||
+    skillPath.startsWith('comet-memory/') ||
+    skillPath.startsWith('sdd-memory/')
   );
 }
 
@@ -258,8 +267,14 @@ export async function detectInstalledWorkflowSelection(
   const roots = Array.isArray(skillsRoots) ? skillsRoots : [skillsRoots];
   const markers = await Promise.all(
     roots.flatMap((skillsRoot) => [
-      fileExists(path.join(skillsRoot, 'comet-native', 'SKILL.md')),
-      fileExists(path.join(skillsRoot, 'comet-classic', 'SKILL.md')),
+      Promise.all([
+        fileExists(path.join(skillsRoot, 'comet-native', 'SKILL.md')),
+        fileExists(path.join(skillsRoot, 'sdd-native', 'SKILL.md')),
+      ]).then(([a, b]) => a || b),
+      Promise.all([
+        fileExists(path.join(skillsRoot, 'comet-classic', 'SKILL.md')),
+        fileExists(path.join(skillsRoot, 'sdd-classic', 'SKILL.md')),
+      ]).then(([a, b]) => a || b),
     ]),
   );
   const hasNative = markers.some((exists, index) => index % 2 === 0 && exists);
@@ -302,9 +317,12 @@ function getManagedSkillReplacementPaths(
   ];
 
   for (const skillPath of managedPaths) {
-    const parts = skillPath.split('/').filter(Boolean);
-    for (let depth = 1; depth <= parts.length; depth++) {
-      allowed.add(parts.slice(0, depth).join('/'));
+    const projectedPath = projectSkillPath(skillPath);
+    for (const currentPath of [skillPath, projectedPath]) {
+      const parts = currentPath.split('/').filter(Boolean);
+      for (let depth = 1; depth <= parts.length; depth++) {
+        allowed.add(parts.slice(0, depth).join('/'));
+      }
     }
   }
 
@@ -319,7 +337,10 @@ function getManagedSkillTopLevelEntries(
 
   for (const skillPath of getManagedSkillPathsForSelection(manifest, workflowSelection)) {
     const [topLevel] = skillPath.split('/').filter(Boolean);
-    if (topLevel) entries.add(topLevel);
+    if (topLevel) {
+      entries.add(topLevel);
+      entries.add(toProjectedSkillName(topLevel));
+    }
   }
 
   return [...entries].sort();
@@ -381,7 +402,7 @@ description: Run the {skillName} Comet workflow
 const PI_COMMAND_EXTENSION_FILE = 'comet-commands.ts';
 const OPENCODE_STYLE_PLATFORM_IDS = new Set(['opencode', 'mimocode']);
 
-function getAssetsDir(): string {
+export function getAssetsDir(): string {
   const directAssets = path.resolve(__dirname, '..', '..', 'assets');
   if (existsSync(path.join(directAssets, 'manifest.json'))) {
     return directAssets;
@@ -569,6 +590,7 @@ async function prepareNativeSkillInstallTarget(
       (relativePath) =>
         relativePath === 'comet/SKILL.md' ||
         relativePath === 'comet/scripts/comet-entry-runtime.mjs' ||
+        relativePath === 'comet/scripts/comet-enterprise-gateway.mjs' ||
         relativePath === 'comet/scripts/comet-hook-router.mjs' ||
         relativePath.startsWith('comet-any/') ||
         relativePath.startsWith('comet-native/'),
@@ -686,15 +708,35 @@ async function installSkillsAsSymlink(
     try {
       if (!overwrite && (await fileExists(centralDest))) {
         skippedCount++;
-        continue;
+      } else {
+        await copyFile(src, centralDest);
+        copied++;
       }
-      await copyFile(src, centralDest);
-      copied++;
     } catch (err) {
       failedCount++;
       console.error(
         `    Failed to copy ${skillRelPath} to central store: ${(err as Error).message}`,
       );
+    }
+
+    const projectedRelPath = projectSkillPath(skillRelPath);
+    if (projectedRelPath !== skillRelPath) {
+      const centralProjectedDest = path.join(centralDir, 'skills', projectedRelPath);
+      try {
+        if (overwrite || !(await fileExists(centralProjectedDest))) {
+          await ensureDir(path.dirname(centralProjectedDest));
+          if (skillRelPath.endsWith('.md') || skillRelPath.endsWith('.yaml')) {
+            const raw = await readFile(src, 'utf-8');
+            await writeFile(centralProjectedDest, projectSkillContent(raw), 'utf-8');
+          } else {
+            await copyFile(src, centralProjectedDest);
+          }
+        }
+      } catch (err) {
+        console.error(
+          `    Failed to copy projected ${projectedRelPath} to central store: ${(err as Error).message}`,
+        );
+      }
     }
   }
 
@@ -805,10 +847,10 @@ async function copyCometSkillsForPlatform(
     try {
       if (!overwrite && (await fileExists(dest))) {
         skippedCount++;
-        continue;
+      } else {
+        await copyFile(src, dest);
+        copied++;
       }
-      await copyFile(src, dest);
-      copied++;
     } catch (err) {
       // Surface the failure via the returned `failed` count instead of
       // swallowing it, so a half-installed state (e.g. a missing
@@ -816,6 +858,29 @@ async function copyCometSkillsForPlatform(
       // breaking phase guard downstream.
       failedCount++;
       console.error(`    Failed to copy ${skillRelPath}: ${(err as Error).message}`);
+    }
+
+    const projectedRelPath = projectSkillPath(skillRelPath);
+    if (projectedRelPath !== skillRelPath) {
+      const projectedDest = path.join(
+        baseDir,
+        getPlatformSkillsDir(platform, scope),
+        'skills',
+        projectedRelPath,
+      );
+      try {
+        if (overwrite || !(await fileExists(projectedDest))) {
+          await ensureDir(path.dirname(projectedDest));
+          if (skillRelPath.endsWith('.md') || skillRelPath.endsWith('.yaml')) {
+            const raw = await readFile(src, 'utf-8');
+            await writeFile(projectedDest, projectSkillContent(raw), 'utf-8');
+          } else {
+            await copyFile(src, projectedDest);
+          }
+        }
+      } catch (err) {
+        console.error(`    Failed to project ${projectedRelPath}: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -867,9 +932,10 @@ function getTopLevelSkillNames(skillPaths: string[]): string[] {
 }
 
 function renderPiCommandExtension(skillNames: string[]): string {
+  const allNames = [...new Set([...skillNames.map(toProjectedSkillName), ...skillNames])];
   return `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const commands = ${JSON.stringify(skillNames, null, 2)} as const;
+const commands = ${JSON.stringify(allNames, null, 2)} as const;
 
 export default function registerCometCommands(pi: ExtensionAPI) {
   for (const name of commands) {
@@ -975,23 +1041,28 @@ async function createOpenCodeCommands(
     if (parts.length !== 2 || parts[1] !== 'SKILL.md') continue;
 
     const skillName = parts[0];
-    const dest = path.join(commandsDir, `${skillName}.md`);
+    const projectedSkillName = toProjectedSkillName(skillName);
 
-    try {
-      if (!overwrite && (await fileExists(dest))) {
-        skipped++;
-        continue;
-      }
+    const writeCommand = async (name: string, isProjected: boolean) => {
+      const dest = path.join(commandsDir, `${name}.md`);
+      try {
+        if (!overwrite && (await fileExists(dest))) {
+          if (!isProjected) skipped++;
+          return;
+        }
 
-      await ensureDir(path.dirname(dest));
-      let skillSourcePath = path.join(assetsDir, languageSkillsDir, skillPath);
-      if (!(await fileExists(skillSourcePath))) {
-        skillSourcePath = path.join(assetsDir, 'skills', skillPath);
-      }
-      const skillBody = stripFrontmatter(await readFile(skillSourcePath, 'utf-8'));
-      const content = `${OPENCODE_COMMAND_HEADER.replace('{skillName}', skillName)}
-Equivalent Comet skill: \`${skillName}\`
-Command name: \`/${skillName}\`
+        await ensureDir(path.dirname(dest));
+        let skillSourcePath = path.join(assetsDir, languageSkillsDir, skillPath);
+        if (!(await fileExists(skillSourcePath))) {
+          skillSourcePath = path.join(assetsDir, 'skills', skillPath);
+        }
+        let skillBody = stripFrontmatter(await readFile(skillSourcePath, 'utf-8'));
+        if (isProjected) {
+          skillBody = projectSkillContent(skillBody, name);
+        }
+        const content = `${OPENCODE_COMMAND_HEADER.replace('{skillName}', name)}
+Equivalent Comet skill: \`${name}\`
+Command name: \`/${name}\`
 
 Use the invocation arguments below as the user input for this workflow:
 
@@ -1001,11 +1072,20 @@ $ARGUMENTS
 
 ${skillBody}
 `;
-      await writeFile(dest, content, 'utf-8');
-      copied++;
-    } catch (err) {
-      failed++;
-      console.error(`    Failed to create OpenCode command ${dest}: ${(err as Error).message}`);
+        await writeFile(dest, content, 'utf-8');
+        if (!isProjected) copied++;
+      } catch (err) {
+        if (!isProjected) failed++;
+        console.error(`    Failed to create OpenCode command ${dest}: ${(err as Error).message}`);
+      }
+    };
+
+    // 1. Write canonical command (e.g. comet-open.md)
+    await writeCommand(skillName, false);
+
+    // 2. Write projected enterprise command (e.g. sdd-open.md)
+    if (projectedSkillName !== skillName) {
+      await writeCommand(projectedSkillName, true);
     }
   }
 
@@ -1236,7 +1316,8 @@ ${content}`;
 }
 
 /**
- * Install Comet hooks for platforms that support them.
+ * Install an owner's Hooks for platforms that support them. Ownership is the
+ * declared script path: only matching commands are replaced during reconcile.
  * Supports multiple hook formats:
  *   'claude-code' — Claude-shaped JSON with PreToolUse array; defaults to settings.local.json,
  *                   with platform metadata able to override the filename
@@ -1250,11 +1331,12 @@ ${content}`;
  *   'omp' — .omp/hooks/pre/comet-hook-router.ts extension module
  *   'trae' — hooks.json with version and PreToolUse grouped command hooks
  */
-async function installCometHooksForPlatform(
+async function installManagedHooksForPlatform(
   baseDir: string,
   platform: Platform,
   scope: InstallScope = 'project',
-  workflowSelection: InitWorkflowSelection = 'classic',
+  hooksConfig: Record<string, HookConfig>,
+  options: { allowGlobal?: boolean } = {},
 ): Promise<HookInstallResult> {
   if (!platform.supportsHooks) {
     return { status: 'skipped', reason: 'platform does not support hooks' };
@@ -1266,20 +1348,23 @@ async function installCometHooksForPlatform(
     };
   }
 
-  if (scope === 'global' && platform.hookFormat !== 'trae' && !platform.supportsGlobalHooks) {
+  if (
+    scope === 'global' &&
+    platform.hookFormat !== 'trae' &&
+    !options.allowGlobal &&
+    !platform.supportsGlobalHooks
+  ) {
     return {
       status: 'skipped',
       reason: 'blocking Hooks are project-scoped',
     };
   }
 
-  try {
-    const manifest = await readManifest();
-    const hooksConfig = managedHooksForSelection(manifest, workflowSelection);
-    if (!hooksConfig || Object.keys(hooksConfig).length === 0) {
-      return { status: 'skipped', reason: 'no hooks defined in manifest' };
-    }
+  if (Object.keys(hooksConfig).length === 0) {
+    return { status: 'skipped', reason: 'no Hooks defined for owner' };
+  }
 
+  try {
     const hookFormat = platform.hookFormat;
     const skillsDir = getPlatformSkillsDir(platform, scope);
     const platformBase = path.join(baseDir, getPlatformConfigDir(platform, scope));
@@ -1443,6 +1528,26 @@ async function installCometHooksForPlatform(
   }
 }
 
+/** Install the workflow Router Hook declared by the packaged Comet manifest. */
+async function installCometHooksForPlatform(
+  baseDir: string,
+  platform: Platform,
+  scope: InstallScope = 'project',
+  workflowSelection: InitWorkflowSelection = 'classic',
+): Promise<HookInstallResult> {
+  try {
+    const manifest = await readManifest();
+    return await installManagedHooksForPlatform(
+      baseDir,
+      platform,
+      scope,
+      managedHooksForSelection(manifest, workflowSelection),
+    );
+  } catch (err) {
+    return { status: 'failed', reason: (err as Error).message };
+  }
+}
+
 function quoteCommandArg(value: string): string {
   return `"${value.replaceAll('\\', '/').replaceAll('"', '\\"')}"`;
 }
@@ -1453,6 +1558,7 @@ function buildHookInvocation(
   skillsDir: string,
   scriptRelPath: string,
   context?: HookCommandContext,
+  extraArgs: readonly string[] = [],
 ): HookInvocation {
   const projectRoot = path.resolve(baseDir);
   const scriptPath = path.join(projectRoot, skillsDir, 'skills', ...scriptRelPath.split('/'));
@@ -1462,10 +1568,10 @@ function buildHookInvocation(
     if (context.scope === 'project') {
       args.push('--project-root', projectRoot);
     }
-    return { command: 'node', args };
+    return { command: 'node', args: [...args, ...extraArgs] };
   }
   args.push('--project-root', projectRoot);
-  return { command: 'node', args };
+  return { command: 'node', args: [...args, ...extraArgs] };
 }
 
 /** Build a shell-form hook command for platforms whose Hook schema only accepts a string. */
@@ -1474,6 +1580,7 @@ function buildHookCommand(
   skillsDir: string,
   scriptRelPath: string,
   context?: HookCommandContext,
+  commandArgs: readonly string[] = [],
 ): string {
   const projectRoot = path.resolve(baseDir);
   const scriptPath = path.join(projectRoot, skillsDir, 'skills', ...scriptRelPath.split('/'));
@@ -1483,9 +1590,9 @@ function buildHookCommand(
     if (context.scope === 'project') {
       command += ` --project-root ${quoteCommandArg(projectRoot)}`;
     }
-    return command;
+    return `${command}${commandArgs.map((arg) => ` ${quoteCommandArg(arg)}`).join('')}`;
   }
-  return `${command} --project-root ${quoteCommandArg(projectRoot)}`;
+  return `${command} --project-root ${quoteCommandArg(projectRoot)}${commandArgs.map((arg) => ` ${quoteCommandArg(arg)}`).join('')}`;
 }
 
 function parseCommandTokens(command: string): string[] | undefined {
@@ -1796,13 +1903,19 @@ async function installClaudeCodeHooks(
     if (!matcherGroups[matcher]) {
       matcherGroups[matcher] = [];
     }
-    const invocation = buildHookInvocation(baseDir, skillsDir, scriptRelPath, context);
+    const invocation = buildHookInvocation(
+      baseDir,
+      skillsDir,
+      scriptRelPath,
+      context,
+      config.arguments,
+    );
     matcherGroups[matcher].push(
       context.platformId === 'claude'
         ? { type: 'command', command: invocation.command, args: invocation.args }
         : {
             type: 'command',
-            command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+            command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
           },
     );
   }
@@ -1852,7 +1965,7 @@ async function installQwenStyleHooks(
     }
     matcherGroups[config.matcher].push({
       type: 'command',
-      command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+      command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
       description: config.description,
     });
   }
@@ -1902,7 +2015,7 @@ async function installGeminiHooks(
       hooks: [
         {
           type: 'command',
-          command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+          command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
           name: config.description,
         },
       ],
@@ -1936,9 +2049,9 @@ async function installWindsurfHooks(
   const hooksPath = path.join(platformBase, 'hooks.json');
 
   const entries: Array<{ command: string; show_output: boolean }> = [];
-  for (const [scriptRelPath] of Object.entries(hooksConfig)) {
+  for (const [scriptRelPath, config] of Object.entries(hooksConfig)) {
     entries.push({
-      command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+      command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
       show_output: true,
     });
   }
@@ -1982,7 +2095,7 @@ async function installTraeHooks(
     matcherGroups[config.matcher] ??= [];
     matcherGroups[config.matcher].push({
       type: 'command',
-      command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+      command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
       timeout: 30,
     });
   }
@@ -2023,7 +2136,7 @@ async function installCopilotHooks(
 
   const scriptEntries: Array<{ matcher: string; bash: string; powershell: string }> = [];
   for (const [scriptRelPath, config] of Object.entries(hooksConfig)) {
-    const cmd = buildHookCommand(baseDir, skillsDir, scriptRelPath, context);
+    const cmd = buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments);
     const matcher =
       config.matcher === 'Write|Edit'
         ? 'create|edit|str_replace_editor|apply_patch'
@@ -2113,7 +2226,7 @@ async function installKiroHooks(
       },
       then: {
         type: 'runCommand',
-        command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context),
+        command: buildHookCommand(baseDir, skillsDir, scriptRelPath, context, config.arguments),
       },
     };
 
@@ -2449,13 +2562,13 @@ export {
   copyCometSkillsForPlatform,
   copyCometRulesForPlatform,
   installCometHooksForPlatform,
+  installManagedHooksForPlatform,
   readManifest,
   getManagedSkillPaths,
   getManagedSkillPathsForSelection,
   getManifestSkills,
   getUserFacingSkillNames,
   createWorkingDirs,
-  getAssetsDir,
   computeRuleDestPath,
   formatRuleContent,
   isManagedHookCommand,
@@ -2476,4 +2589,4 @@ export {
   removeRetiredCometOwnedSkillPaths,
   RETIRED_COMET_OWNED_SKILL_PATHS,
 };
-export type { Manifest, LanguageConfig, PlannedSkillFile, PlannedSkillSourceFile };
+export type { HookConfig, Manifest, LanguageConfig, PlannedSkillFile, PlannedSkillSourceFile };

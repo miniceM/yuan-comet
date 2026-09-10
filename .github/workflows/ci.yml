@@ -45,6 +45,7 @@ jobs:
         run: pnpm check:generated
       - run: pnpm format:check
       - run: pnpm lint
+      - run: pnpm check:enterprise-guard
       - run: pnpm build
       - name: Verify build is deterministic
         run: git diff --exit-code -- assets

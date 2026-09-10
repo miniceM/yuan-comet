@@ -35,6 +35,10 @@ async function makeMinimalRepository(): Promise<string> {
         state: 'assets/skills/comet/scripts/comet-state.mjs',
       },
     },
+    enterpriseGuardRuntime: {
+      entry: 'domains/enterprise-guard/enterprise-gateway-entry.ts',
+      output: 'assets/skills/comet/scripts/comet-enterprise-gateway.mjs',
+    },
     allowedTopLevelEntries: [
       '.gitignore',
       'AGENTS.md',
@@ -50,7 +54,7 @@ async function makeMinimalRepository(): Promise<string> {
     ],
     sourceRoots: ['app', 'domains', 'platform'],
     appModules: [],
-    domainModules: ['comet-classic'],
+    domainModules: ['comet-classic', 'enterprise-guard'],
     platformModules: [],
     scriptModules: [],
     testRoots: ['test'],
@@ -66,6 +70,8 @@ async function makeMinimalRepository(): Promise<string> {
     writeFile(root, 'assets/manifest.json', '{}\n'),
     writeFile(root, 'domains/comet-classic/classic-state-entry.ts', 'export {};\n'),
     writeFile(root, 'assets/skills/comet/scripts/comet-state.mjs', 'export {};\n'),
+    writeFile(root, 'domains/enterprise-guard/enterprise-gateway-entry.ts', 'export {};\n'),
+    writeFile(root, 'assets/skills/comet/scripts/comet-enterprise-gateway.mjs', 'export {};\n'),
     writeFile(
       root,
       'package.json',

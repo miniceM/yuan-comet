@@ -33,6 +33,7 @@ import {
   reconcileCometHooksForPlatform,
   reconcileProjectCometHooksForPlatform,
 } from '../../domains/skill/hook-lifecycle.js';
+import { installEnterpriseGuard } from '../../domains/enterprise-guard/hook-lifecycle.js';
 import { syncCometProjectInstructions } from '../../domains/skill/project-instructions.js';
 import { LANGUAGES, type LanguageConfig } from '../../domains/skill/languages.js';
 import { resolveInitWorkflow } from '../../domains/comet-entry/init-workflow.js';
@@ -79,6 +80,10 @@ import {
   installCodegraph,
   resolveCodegraphCommand,
 } from '../../domains/integrations/codegraph.js';
+import {
+  ensureEnterpriseCli,
+  type EnterpriseCliResult,
+} from '../../domains/enterprise-cli/index.js';
 import { printVersionInfo } from '../../platform/version/version.js';
 import { printCometBanner } from '../cli/comet-banner.js';
 import { t, type TranslationKey } from './i18n.js';
@@ -322,6 +327,7 @@ async function selectNpmDeps(
   options: InitOptions,
   lang: string,
   workflowSelection: InitWorkflowSelection,
+  _scope: InstallScope,
 ): Promise<Set<NpmDepId>> {
   const includesClassic = includesWorkflow(workflowSelection, 'classic');
   const openSpecInstalled = includesClassic && isCommandAvailable('openspec');
@@ -706,6 +712,50 @@ export async function initCommand(
     plans.push({ platform, native, osAction, spAction, cmAction, hasOS, hasSP, hasCM });
   }
 
+  // Enterprise CLI dependencies must be ready before any platform assets or
+  // workflow configuration are written. A single init checks the shared
+  // environment once, even when several platforms are selected.
+  const enterpriseCli: EnterpriseCliResult = await ensureEnterpriseCli();
+  if (enterpriseCli.status === 'incomplete') {
+    const reason = enterpriseCli.failures
+      .map(
+        (failure) =>
+          `${failure.command}: ${failure.reasonCode}${failure.detail ? ` (${failure.detail})` : ''}`,
+      )
+      .join('; ');
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          {
+            projectPath,
+            scope,
+            language: language.id,
+            workflow,
+            initializedWorkflows:
+              workflowSelection === 'both' ? ['native', 'classic'] : [workflowSelection],
+            workflowSource,
+            status: 'incomplete',
+            enterpriseCli,
+            failures: [
+              {
+                component: 'Enterprise CLI',
+                reason: reason || 'Enterprise CLI prerequisites are unavailable',
+              },
+            ],
+            results: [],
+            workingDirsCreated: false,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      log(`\n  Enterprise CLI prerequisites are incomplete: ${reason}`);
+      for (const action of enterpriseCli.nextActions) log(`  ${action}`);
+    }
+    return { status: 'incomplete' };
+  }
+
   if (includesWorkflow(workflowSelection, 'native') && scope === 'project') {
     for (const plan of plans) {
       const action =
@@ -737,6 +787,7 @@ export async function initCommand(
     options,
     lang,
     workflowSelection,
+    scope,
   );
   const shouldInstallOpenSpecCli = selectedNpmDeps.has('openspec');
   const shouldInstallSuperpowers = selectedNpmDeps.has('superpowers');
@@ -987,6 +1038,36 @@ export async function initCommand(
         });
         log(
           `  Comet hooks -> ${platform.name}: ${t(lang, 'hooksFailed')} (${(err as Error).message})`,
+        );
+      }
+    }
+
+    if (cmAction !== 'skip' && !skillFailed) {
+      try {
+        const enterpriseResult = await installEnterpriseGuard(baseDir, platform, scope);
+        cometComponentInstalled ||= enterpriseResult.status === 'installed';
+        if (enterpriseResult.status === 'failed') {
+          cmStatus = 'failed';
+          platformFailures.push({
+            platform: platform.id,
+            platformName: platform.name,
+            component: 'Hook',
+            reason: enterpriseResult.reason ?? 'Enterprise Guard Hook installation failed',
+          });
+          log(
+            `  Enterprise Guard -> ${platform.name}: ${t(lang, 'hooksFailed')} (${enterpriseResult.reason})`,
+          );
+        }
+      } catch (err) {
+        cmStatus = 'failed';
+        platformFailures.push({
+          platform: platform.id,
+          platformName: platform.name,
+          component: 'Hook',
+          reason: (err as Error).message,
+        });
+        log(
+          `  Enterprise Guard -> ${platform.name}: ${t(lang, 'hooksFailed')} (${(err as Error).message})`,
         );
       }
     }
@@ -1358,6 +1439,8 @@ export async function initCommand(
           nativeArtifactRoot,
           classicArtifactLayout: workflowDecision?.classicArtifactLayout ?? null,
           selectedPlatforms: selectedPlatformIds,
+          enterpriseCli,
+          nextActions: enterpriseCli.nextActions,
           codegraph,
           results: results.map((result) => ({
             platform: result.platform.id,
@@ -1384,6 +1467,10 @@ export async function initCommand(
     nativeArtifactRoot,
     workflowDecision?.classicArtifactLayout ?? null,
   );
+  if (completionStatus === 'complete' && enterpriseCli.nextActions.length > 0) {
+    console.log(lang === 'zh' ? '  IAM 登录提示：' : '  IAM login reminder:');
+    for (const action of enterpriseCli.nextActions) console.log(`    ${action}`);
+  }
   return { status: completionStatus };
 }
 

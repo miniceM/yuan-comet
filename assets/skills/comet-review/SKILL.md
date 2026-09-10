@@ -69,6 +69,18 @@ comet native status <change-name> --details --json
 
 Read the returned brief, complete proposed Specs, acceptance items, Builder handoff, checks, verification, risks, blockers, and verification report reference. Use evidence from the current candidate and iteration only. Historical iterations may explain residual risk but must not override current state.
 
+### Enterprise Guard Audit State
+
+Run the read-only check command to inspect the Enterprise Guard audit state:
+
+```bash
+pnpm run check:enterprise-guard
+```
+
+When unable to run this command, read `.comet/enterprise-guard/findings.jsonl` following the consumption protocol:
+- If the file does not exist, treat the audit state as clean (`clear`).
+- If the file exists, inspect the findings line-by-line. If any finding references an `exceptionId`, read `.comet/enterprise-guard/exceptions.json` to verify the exception's validity (including `status === 'active'`, unexpired `expiresAt`, and a `scope` that strictly matches the file path or command of the current change).
+
 ## 3. Establish the implementation diff
 
 1. Run `git status --short --untracked-files=all` first to fully enumerate staged, unstaged, and untracked worktree state.
@@ -86,7 +98,13 @@ Review requirements, tasks, and the current diff, focusing only on:
 - security, permission, and path-boundary risks;
 - error handling, compatibility, and important edge cases;
 - omitted tasks or implementation that contradicts explicit current-change requirements;
-- whether tests cover the behavior change and whether existing evidence supports the stated conclusion.
+- whether tests cover the behavior change and whether existing evidence supports the stated conclusion;
+- Enterprise Guard rule audit and compliance verification:
+  - **Blocking findings (`status: blocked`)**: When HARD `deny` records, corrupted audit logs (malformed or unparseable), or unapproved violations exist, report a blocking review conclusion (`CRITICAL`) that requests changes to prevent merging. Report only the rule ID and irreversible `fingerprint`; never echo sensitive raw input context.
+  - **Exceptions and warnings (`status: warn`)**:
+    - When a rule is matched but bound to a valid, unexpired, and scope-matching exception (from `exceptions.json`), mark it as `WARNING`. Note its audit risk, record an audit trail entry (rule ID, affected path, and `exceptionId`), and explicitly state that an approved exception does not constitute a passed security check.
+    - When unapproved or unresolved SOFT findings exist without a valid exception, mark them as `IMPORTANT` and report a blocking review conclusion requesting remediation or formal exception approval.
+  - **Clean state (`status: clear`)**: Merely confirms that the Enterprise Guard rule audit passed; it does not replace functional tests or human code review.
 
 Do not report style preferences, unrelated refactors, or speculation without a concrete impact as findings. Every finding must identify a file and line and explain the triggering behavior or risk. When evidence is insufficient, lower the severity or place the item under open questions.
 
@@ -110,7 +128,7 @@ Evidence: The concrete relationship to the diff, task, specification, or recorde
 Then report:
 
 - `Review scope`: workflow, change, phase, baseline, included diffs, and any scope limitations;
-- `Evidence status`: test, build, and verification evidence read and its freshness, without rerunning tests;
+- `Evidence status`: test, build, and verification evidence read and its freshness, plus the Enterprise Guard findings audit state (clear / warn / blocked with exception audit trail), without rerunning tests;
 - `Open questions`: only questions that genuinely block a conclusion;
 - `Conclusion`: finding counts, or an explicit “No concrete findings.”
 
