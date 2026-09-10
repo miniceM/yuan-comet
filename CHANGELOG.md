@@ -2,6 +2,12 @@
 
 All notable changes to @rpamis/comet will be documented in this file.
 
+## What's Changed [0.4.1] - 2026-09-10
+
+### Changed
+
+- **Enterprise onboarding**: Initialization now recommends the Classic five-step workflow, explains splitting user stories and changes in DOP, and shows how to start with `/comet-open <change-id>`. Native-only installations explain how to enable Classic first.
+
 ## What's Changed [0.4.0] - 2026-09-08
 
 ### Changed

@@ -488,10 +488,16 @@ function displaySummary(
 
   if (failures.length === 0) {
     console.log(`\n  ${t(lang, 'getStarted')}`);
-    console.log(`    ${t(lang, 'getStartedComet')}`);
+    console.log(`    ${t(lang, 'getStartedEnterprise')}`);
+    console.log(`    ${t(lang, 'getStartedDop')}`);
     if (includesWorkflow(workflowSelection, 'classic')) {
+      console.log(`    ${t(lang, 'getStartedOpen')}`);
+      console.log(`    ${t(lang, 'getStartedClassicSteps')}`);
       console.log(`    ${t(lang, 'getStartedHotfix')}`);
       console.log(`    ${t(lang, 'getStartedTweak')}`);
+    } else {
+      console.log(`    ${t(lang, 'getStartedClassicInstall')}`);
+      console.log(`    ${t(lang, 'getStartedComet')}`);
     }
   }
   console.log();
