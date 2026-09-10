@@ -46,7 +46,19 @@ function writeOperation(
   return 'unknown';
 }
 
-const READ_ONLY_OPENCODE_TOOLS = new Set(['glob', 'grep', 'ls', 'read', 'view', 'list', 'find']);
+export const AUDITED_OPENCODE_TOOLS = new Set([
+  'bash',
+  'write',
+  'edit',
+  'apply_patch',
+  'delete',
+  'remove',
+  'erase',
+]);
+
+export function isAuditedOpenCodeTool(toolName: string | null): boolean {
+  return toolName !== null && AUDITED_OPENCODE_TOOLS.has(toolName.trim().toLowerCase());
+}
 
 /** Convert OpenCode tool.execute.before JSON into the EnterpriseHookInput v1 contract. */
 export function parseOpenCodePluginInput(source: string): EnterpriseHookInput {
@@ -96,15 +108,12 @@ export function parseOpenCodePluginInput(source: string): EnterpriseHookInput {
       toolInputValue.diff,
   );
   const mutableToolName = toolName.value ?? rawToolName.value;
+  const isAudited = isAuditedOpenCodeTool(mutableToolName);
   const isKnownCommandTool = mutableToolName === 'Bash';
-  const isReadOnlyTool = mutableToolName !== null && READ_ONLY_OPENCODE_TOOLS.has(mutableToolName);
-  const isMutatingUnknown =
-    !isWriteTool(mutableToolName) &&
-    !isKnownCommandTool &&
-    !isReadOnlyTool &&
-    parse.status === 'complete';
   const writes =
-    isWriteTool(mutableToolName) || isMutatingUnknown || isDeleteTool(mutableToolName)
+    isAudited &&
+    !isKnownCommandTool &&
+    (isWriteTool(mutableToolName) || isDeleteTool(mutableToolName))
       ? [{ operation: writeOperation(mutableToolName), path: pathValue, fragment: fragmentValue }]
       : [];
   for (const [index, write] of writes.entries()) {

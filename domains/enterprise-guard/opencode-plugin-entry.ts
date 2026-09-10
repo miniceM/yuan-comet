@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseOpenCodeRunnerDecision } from './decision-codecs/opencode.js';
 import { OPENCODE_PLUGIN_MARKER } from './hook-lifecycle.js';
+import { isAuditedOpenCodeTool } from './input-codecs/opencode.js';
 
 const RUNNER_TIMEOUT_MS = 10_000;
 const INSTALLED_RUNNER_RELATIVE_PATH = '../skills/comet/scripts/comet-enterprise-runner.mjs';
@@ -110,6 +111,10 @@ function failClosed(reason: string): never {
 export const CometEnterpriseGuardPlugin = async (context?: OpenCodePluginContext) => ({
   [OPENCODE_PLUGIN_MARKER]: true,
   'tool.execute.before': async (input: OpenCodeHookInput, output: OpenCodeHookOutput) => {
+    const toolName = typeof input?.tool === 'string' ? input.tool.trim() : null;
+    if (toolName !== null && !isAuditedOpenCodeTool(toolName)) {
+      return;
+    }
     const payload = JSON.stringify({
       hook_event_name: 'tool.execute.before',
       tool: input?.tool ?? null,

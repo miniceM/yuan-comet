@@ -14,22 +14,22 @@
   "files": {
     "gateway": {
       "fileName": "comet-enterprise-gateway.mjs",
-      "sha256": "7ca187e198efc4315bc9d916710bff11460abdf687111fdb7a6141a4ead44e4a",
+      "sha256": "2b2eee4707395ff8bf45aeff7554a8e4b594ec643bd8d1b096eaef1b7c275283",
       "executable": true
     },
     "gitBoundary": {
       "fileName": "comet-git-boundary.mjs",
-      "sha256": "15e7cc7e40e5edb4b2c54f2df8eb0bc11692102d1569427f9a81409ee7d956b5",
+      "sha256": "a495dbc149f28207d38b2e7e35328d8349989c7ec50aa00eb5bbf9b217254eb1",
       "executable": true
     },
     "runner": {
       "fileName": "comet-enterprise-runner.mjs",
-      "sha256": "2988f8d41bae8808c44e82862c3b30e137ef85a6103af765c56c59af53716729",
+      "sha256": "fc4cd596bb57aacb5ce6c77e999c1a461c19c8e7190c7954a35c9cbf9827b819",
       "executable": true
     },
     "opencodePlugin": {
       "fileName": "comet-enterprise-guard.mjs",
-      "sha256": "36b66ed6ab50230f9b9626070185637f4fb59d0c1cd10d493a08ee96b5c77fc1",
+      "sha256": "99030755fccc102b93ff5350bc06f9403ea22ad664db4faafaca9b3efa5ff4a0",
       "executable": false
     }
   }

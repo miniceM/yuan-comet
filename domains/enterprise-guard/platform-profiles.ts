@@ -135,7 +135,7 @@ const OPENCODE_PROFILE: EnterpriseGuardPlatformProfile = {
   decisionCodec: 'opencode-plugin',
   installStrategy: 'managed-plugin',
   enforcement: 'best-effort',
-  coveredTools: ['bash'],
+  coveredTools: ['bash', 'write', 'edit', 'apply_patch', 'delete', 'remove', 'erase'],
   orderingGuarantee: 'unknown',
 };
 

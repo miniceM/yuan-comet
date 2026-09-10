@@ -94,13 +94,13 @@ describe('Enterprise Guard platform coverage', () => {
       decisionCodec: 'opencode-plugin',
       installStrategy: 'managed-plugin',
       enforcement: 'best-effort',
-      coveredTools: ['bash'],
+      coveredTools: ['bash', 'write', 'edit', 'apply_patch', 'delete', 'remove', 'erase'],
       orderingGuarantee: 'unknown',
     });
     expect(enterpriseGuardCoverage({ id: 'opencode' })).toMatchObject({
       level: 'best-effort',
       installationScope: 'project or user-local',
-      enforcedTools: ['bash'],
+      enforcedTools: ['bash', 'write', 'edit', 'apply_patch', 'delete', 'remove', 'erase'],
       fallback:
         'local managed plugin + rules injection + CI fallback; plugin ordering is not final',
     });

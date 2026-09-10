@@ -12,6 +12,7 @@ import {
   removeEnterpriseGuard,
 } from '../../../domains/enterprise-guard/hook-lifecycle.js';
 import { inspectManagedRuntime } from '../../../domains/enterprise-guard/managed-runtime.js';
+import { CometEnterpriseGuardPlugin } from '../../../domains/enterprise-guard/opencode-plugin-entry.js';
 import { PLATFORMS } from '../../../platform/install/platforms.js';
 
 type ClaudeHook = { type: string; command: string; args?: string[] };
@@ -295,6 +296,29 @@ describe('enterprise guard managed Hook lifecycle', () => {
       await expect(inspectEnterpriseGuard(temporaryRoot, opencode, 'project')).resolves.toEqual({
         present: true,
       });
+    });
+
+    it('fast-paths non-audited tools such as skill and question without invoking the runner', async () => {
+      const plugin = await CometEnterpriseGuardPlugin();
+      const envBackup = process.env.COMET_ENTERPRISE_GUARD_RUNNER;
+      process.env.COMET_ENTERPRISE_GUARD_RUNNER = path.join(
+        temporaryRoot,
+        'non-existent-runner.mjs',
+      );
+      try {
+        await expect(
+          plugin['tool.execute.before']({ tool: 'skill' }, { args: { name: 'test' } }),
+        ).resolves.toBeUndefined();
+        await expect(
+          plugin['tool.execute.before']({ tool: 'question' }, { args: { question: 'hello' } }),
+        ).resolves.toBeUndefined();
+        await expect(
+          plugin['tool.execute.before']({ tool: 'read' }, { args: { path: 'file.txt' } }),
+        ).resolves.toBeUndefined();
+      } finally {
+        if (envBackup) process.env.COMET_ENTERPRISE_GUARD_RUNNER = envBackup;
+        else delete process.env.COMET_ENTERPRISE_GUARD_RUNNER;
+      }
     });
 
     it('preserves a user-owned file occupying the managed plugin path', async () => {

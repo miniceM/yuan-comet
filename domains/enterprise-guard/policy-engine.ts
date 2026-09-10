@@ -322,20 +322,32 @@ export function evaluateEnterpriseHookInput(
   }
   if (
     isWriteTool(toolName) &&
-    (input.writes.length !== 1 || !input.writes[0].path.value || !input.writes[0].fragment.value)
+    (input.writes.length !== 1 ||
+      input.writes[0].path.value === null ||
+      input.writes[0].path.value.trim() === '' ||
+      input.writes[0].fragment.value === null)
   ) {
     return aggregate([inputFailure(input)]);
   }
   if (isBashTool(toolName) && !input.command.value) return aggregate([inputFailure(input)]);
   if (input.writes.length > 0 && !isWriteTool(toolName)) {
+    const isDelete = input.writes.some((write) => write.operation === 'delete');
     return aggregate([
       result(
         input,
         'EG-HARD-INPUT-001',
         'hard',
         'deny',
-        'Unknown mutating tool cannot be verified',
-        [{ kind: 'policy', subject: 'unknown-mutating-tool', redacted: true }],
+        isDelete
+          ? 'Unsupported delete operation cannot be verified'
+          : 'Unknown mutating tool cannot be verified',
+        [
+          {
+            kind: 'policy',
+            subject: isDelete ? 'unsupported-delete-operation' : 'unknown-mutating-tool',
+            redacted: true,
+          },
+        ],
       ),
     ]);
   }

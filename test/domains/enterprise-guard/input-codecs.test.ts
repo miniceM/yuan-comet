@@ -135,18 +135,35 @@ describe('Enterprise Guard input codecs', () => {
     expect(del.writes[0].path.value).toBe('src/index.ts');
   });
 
-  it('abstains only for a known read-only OpenCode tool', () => {
+  it('allows out-of-scope tools including skill, question, read, and custom extensions', () => {
+    for (const [tool, toolInput] of [
+      ['Read', { path: 'src/index.ts' }],
+      ['skill', { name: 'comet' }],
+      ['question', { question: 'Continue?' }],
+      ['custom_deployer', { command: 'deploy --production' }],
+      ['custom_tool', { file_path: 'src/generated.ts', content: 'export {};' }],
+      ['unknown_utility', {}],
+    ] as const) {
+      const input = parseEnterpriseGuardInput(
+        'opencode',
+        JSON.stringify({ tool, tool_input: toolInput }),
+      );
+      expect(input.writes).toEqual([]);
+      expect(evaluateEnterpriseHookInput(input).allowed).toBe(true);
+    }
+  });
+
+  it('allows emptying a file with valid empty content', () => {
     const input = parseEnterpriseGuardInput(
       'opencode',
-      JSON.stringify({ tool: 'Read', tool_input: { path: 'src/index.ts' } }),
+      JSON.stringify({ tool: 'write', tool_input: { file_path: 'src/empty.ts', content: '' } }),
     );
-
-    expect(input.tool.name.value).toBe('read');
-    expect(input.writes).toEqual([]);
+    expect(input.writes[0]).toMatchObject({ operation: 'create' });
+    expect(input.writes[0].fragment.value).toBe('');
     expect(evaluateEnterpriseHookInput(input).allowed).toBe(true);
   });
 
-  it('fails closed for malformed, truncated, and unknown mutating OpenCode tools', () => {
+  it('fails closed for malformed, truncated, and unsupported delete operations in OpenCode', () => {
     const malformed = parseEnterpriseGuardInput('opencode', '{');
     expect(malformed.parse.status).toBe('failed');
     expect(evaluateEnterpriseHookInput(malformed)).toMatchObject({
@@ -168,22 +185,16 @@ describe('Enterprise Guard input codecs', () => {
       ruleId: 'EG-HARD-INPUT-001',
     });
 
-    for (const toolInput of [
-      { command: 'deploy --production' },
-      { file_path: 'src/generated.ts', content: 'export {};' },
-      { path: 'src/generated.ts' },
-      {},
-    ]) {
-      const unknown = parseEnterpriseGuardInput(
-        'opencode',
-        JSON.stringify({ tool: 'custom_deployer', tool_input: toolInput }),
-      );
-      expect(unknown.writes[0]).toMatchObject({ operation: 'unknown' });
-      expect(evaluateEnterpriseHookInput(unknown)).toMatchObject({
-        allowed: false,
-        ruleId: 'EG-HARD-INPUT-001',
-      });
-    }
+    const del = parseEnterpriseGuardInput(
+      'opencode',
+      JSON.stringify({ tool: 'delete', tool_input: { file_path: 'src/index.ts' } }),
+    );
+    expect(del.writes[0]).toMatchObject({ operation: 'delete' });
+    expect(evaluateEnterpriseHookInput(del)).toMatchObject({
+      allowed: false,
+      ruleId: 'EG-HARD-INPUT-001',
+      reason: expect.stringContaining('Unsupported delete operation'),
+    });
   });
 
   describe('Gemini Style Codec', () => {
