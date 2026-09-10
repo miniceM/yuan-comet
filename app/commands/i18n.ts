@@ -42,6 +42,11 @@ export type TranslationKey =
   | 'nativeWorkingDir'
   | 'classicWorkingDirs'
   | 'getStarted'
+  | 'getStartedEnterprise'
+  | 'getStartedDop'
+  | 'getStartedOpen'
+  | 'getStartedClassicSteps'
+  | 'getStartedClassicInstall'
   | 'getStartedComet'
   | 'getStartedHotfix'
   | 'getStartedTweak'
@@ -181,6 +186,13 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     nativeWorkingDir: 'Native:',
     classicWorkingDirs: 'Classic: docs/superpowers/specs/, docs/superpowers/plans/',
     getStarted: 'Get started:',
+    getStartedEnterprise: 'Recommended for enterprise development: Classic five-step workflow',
+    getStartedDop: 'First, split user stories and changes in DOP and obtain the change ID.',
+    getStartedOpen:
+      '/comet-open <change-id>  — Enter in your AI coding assistant to start development for the DOP change',
+    getStartedClassicSteps: 'Open → Design → Build → Verify → Archive',
+    getStartedClassicInstall:
+      'Only Native is installed. To use the enterprise workflow, run comet init --workflow both first.',
     getStartedComet: '/comet "your idea"  — Start a new change with full workflow',
     getStartedHotfix: '/comet-hotfix       — Quick bug fix (skip brainstorming)',
     getStartedTweak: '/comet-tweak        — Small change (skip brainstorming and plan)',
@@ -326,6 +338,13 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     nativeWorkingDir: 'Native：',
     classicWorkingDirs: 'Classic：docs/superpowers/specs/, docs/superpowers/plans/',
     getStarted: '开始使用：',
+    getStartedEnterprise: '企业开发推荐：经典五步法（Classic）',
+    getStartedDop: '请先在 DOP 系统中完成用户故事和变更的拆分，取得变更号。',
+    getStartedOpen: '/comet-open <变更号>  — 在 AI 编程助手中输入，开启该 DOP 变更的开发流程',
+    getStartedClassicSteps:
+      '开启（Open）→ 设计（Design）→ 构建（Build）→ 验证（Verify）→ 归档（Archive）',
+    getStartedClassicInstall:
+      '当前仅安装 Native；使用企业推荐流程前，请先运行 comet init --workflow both。',
     getStartedComet: '/comet "你的想法"  — 启动完整工作流',
     getStartedHotfix: '/comet-hotfix       — 快速修复（跳过 brainstorming）',
     getStartedTweak: '/comet-tweak        — 小改动（跳过 brainstorming 和完整 plan）',
