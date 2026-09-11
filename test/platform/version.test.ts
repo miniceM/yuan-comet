@@ -5,6 +5,7 @@ import {
   getCurrentVersion,
   checkForUpdate,
   printVersionInfo,
+  resolveRegistryUrl,
 } from '../../platform/version/version.js';
 
 /**
@@ -179,5 +180,20 @@ describe('printVersionInfo', () => {
 
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatch(/^  Comet v/);
+  });
+
+  describe('resolveRegistryUrl', () => {
+    it('returns official npm registry url by default', () => {
+      expect(resolveRegistryUrl()).toBe('https://registry.npmjs.org/@cli-tools/yuan-comet/latest');
+    });
+
+    it('returns custom enterprise registry url when COMET_ENTERPRISE_NPM_REGISTRY is set', () => {
+      process.env.COMET_ENTERPRISE_NPM_REGISTRY = 'https://npm.corp.internal/';
+      try {
+        expect(resolveRegistryUrl()).toBe('https://npm.corp.internal/@cli-tools/yuan-comet/latest');
+      } finally {
+        delete process.env.COMET_ENTERPRISE_NPM_REGISTRY;
+      }
+    });
   });
 });

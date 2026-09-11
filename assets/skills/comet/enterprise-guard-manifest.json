@@ -14,7 +14,7 @@
   "files": {
     "gateway": {
       "fileName": "comet-enterprise-gateway.mjs",
-      "sha256": "2b2eee4707395ff8bf45aeff7554a8e4b594ec643bd8d1b096eaef1b7c275283",
+      "sha256": "4a92dbc7ef9d1f77c9605fd10c8e67873ba36085121af181c8786c5d45ae5171",
       "executable": true
     },
     "gitBoundary": {

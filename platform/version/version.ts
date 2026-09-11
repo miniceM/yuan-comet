@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'fs';
+import http from 'http';
 import https from 'https';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -22,7 +23,15 @@ function readCurrentVersion(): string {
 let cachedVersion: string | null = null;
 
 const PACKAGE_NAME = '@cli-tools/yuan-comet';
-const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
+
+export function resolveRegistryUrl(packageName: string = PACKAGE_NAME): string {
+  const custom = process.env.COMET_ENTERPRISE_NPM_REGISTRY?.trim();
+  if (custom) {
+    const base = custom.replace(/\/+$/, '');
+    return `${base}/${packageName}/latest`;
+  }
+  return `https://registry.npmjs.org/${packageName}/latest`;
+}
 
 export interface VersionCheckResult {
   currentVersion: string;
@@ -131,7 +140,9 @@ export function getCurrentVersion(): string {
  */
 export function getLatestVersion(): Promise<string | null> {
   return new Promise((resolve) => {
-    const request = https.get(REGISTRY_URL, { timeout: 5000 }, (res) => {
+    const registryUrl = resolveRegistryUrl(PACKAGE_NAME);
+    const client = registryUrl.startsWith('http:') ? http : https;
+    const request = client.get(registryUrl, { timeout: 5000 }, (res) => {
       if (res.statusCode !== 200) {
         res.resume();
         resolve(null);

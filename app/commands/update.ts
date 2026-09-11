@@ -87,7 +87,12 @@ import { assertProjectScopeOptions, resolveProjectScopeMode } from './project-sc
 import type { CommandExecutionResult } from './command-result.js';
 
 const PACKAGE_NAME = '@cli-tools/yuan-comet';
-const OFFICIAL_REGISTRY = 'https://registry.npmjs.org';
+
+function resolveUpdateRegistry(): string | null {
+  const envRegistry = process.env.COMET_ENTERPRISE_NPM_REGISTRY?.trim();
+  if (envRegistry) return envRegistry;
+  return null;
+}
 
 function getPackageInstallSubdir(packageName: string = PACKAGE_NAME): string[] {
   return packageName.split('/');
@@ -419,7 +424,7 @@ async function hasLocalCometSkills(
   for (const skillsDir of getInstalledCometSkillsDirs(baseDir, platform, scope)) {
     if (!(await targetPathExists(skillsDir))) continue;
     const entries = await readTargetDir(skillsDir);
-    if (entries.some((entry) => entry.startsWith('comet'))) return true;
+    if (entries.some((entry) => entry.startsWith('comet') || entry.startsWith('sdd'))) return true;
   }
   return false;
 }
@@ -432,9 +437,14 @@ async function detectInstalledCometLanguage(
   for (const skillsDir of getInstalledCometSkillsDirs(baseDir, platform, scope)) {
     if (!(await targetPathExists(skillsDir))) continue;
     const entries = (await readTargetDir(skillsDir))
-      .filter((entry) => entry.startsWith('comet'))
+      .filter((entry) => entry.startsWith('comet') || entry.startsWith('sdd'))
       .sort((left, right) => {
-        const rank = (entry: string) => (entry === 'comet' ? 0 : entry === 'comet-native' ? 1 : 2);
+        const rank = (entry: string) =>
+          entry === 'comet' || entry === 'sdd'
+            ? 0
+            : entry === 'comet-native' || entry === 'sdd-native'
+              ? 1
+              : 2;
         return rank(left) - rank(right) || left.localeCompare(right);
       });
 
@@ -503,11 +513,9 @@ async function detectCometPackageScope(
     'node_modules',
     ...getPackageInstallSubdir(PACKAGE_NAME),
   );
+  if (isSameOrInside(packageRoot, primaryPackageRoot)) return 'project';
   const legacyPackageRoot = path.join(projectPath, 'node_modules', '@rpamis', 'comet');
-  const localPackageRoot = (await fileExists(primaryPackageRoot))
-    ? primaryPackageRoot
-    : legacyPackageRoot;
-  if (isSameOrInside(packageRoot, localPackageRoot)) return 'project';
+  if (isSameOrInside(packageRoot, legacyPackageRoot)) return 'project';
 
   const packageJsonPath = path.join(projectPath, 'package.json');
   if (await fileExists(packageJsonPath)) {
@@ -531,9 +539,12 @@ async function detectCometPackageScope(
 
 function buildNpmUpdateArgs(scope: InstallScope, version = 'latest'): string[] {
   const packageSpec = `${PACKAGE_NAME}@${version}`;
-  return scope === 'global'
-    ? ['install', '-g', packageSpec, '--registry', OFFICIAL_REGISTRY]
-    : ['install', packageSpec, '--registry', OFFICIAL_REGISTRY];
+  const registry = resolveUpdateRegistry();
+  const baseArgs = scope === 'global' ? ['install', '-g', packageSpec] : ['install', packageSpec];
+  if (registry) {
+    return [...baseArgs, '--registry', registry];
+  }
+  return baseArgs;
 }
 
 function formatNpmUpdateCommand(scope: InstallScope, version = 'latest'): string {
@@ -760,9 +771,16 @@ async function readCometPackage(packageRoot: string): Promise<InstalledCometPack
     resolvedPackageRoot,
     'Comet package.json',
   );
-  const pkg = await readJson<{ version?: unknown; bin?: string | Record<string, string> }>(
-    packageJsonPath,
-  );
+  const pkg = await readJson<{
+    name?: unknown;
+    version?: unknown;
+    bin?: string | Record<string, string>;
+  }>(packageJsonPath);
+  if (pkg.name !== PACKAGE_NAME) {
+    throw new Error(
+      `Comet package name mismatch: expected "${PACKAGE_NAME}", but found "${String(pkg.name ?? '<undefined>')}" at ${packageJsonPath}`,
+    );
+  }
   if (typeof pkg.version !== 'string') {
     throw new Error(`Comet package has no valid version: ${packageJsonPath}`);
   }
@@ -798,12 +816,18 @@ async function readInstalledCometPackage(
     const npmRoot = parseNpmAbsolutePath(rootResult, 'npm root');
     const npmPrefix = parseNpmAbsolutePath(prefixResult, 'npm prefix');
     const primaryPackageDir = path.join(npmRoot, ...getPackageInstallSubdir(PACKAGE_NAME));
-    const candidateDir = (await fileExists(path.join(primaryPackageDir, 'package.json')))
-      ? primaryPackageDir
-      : (await fileExists(path.join(npmRoot, '@rpamis', 'comet', 'package.json')))
-        ? path.join(npmRoot, '@rpamis', 'comet')
-        : primaryPackageDir;
-    const installedPackage = await readCometPackage(candidateDir);
+    const upstreamPackageDir = path.join(npmRoot, '@rpamis', 'comet');
+    if (!(await fileExists(path.join(primaryPackageDir, 'package.json')))) {
+      if (await fileExists(path.join(upstreamPackageDir, 'package.json'))) {
+        throw new Error(
+          `Detected upstream package at ${upstreamPackageDir}, but current Comet CLI only manages "${PACKAGE_NAME}". Please install "${PACKAGE_NAME}" instead of updating legacy upstream package.`,
+        );
+      }
+      throw new Error(
+        `Package "${PACKAGE_NAME}" not found in project node_modules (${primaryPackageDir})`,
+      );
+    }
+    const installedPackage = await readCometPackage(primaryPackageDir);
     return {
       ...installedPackage,
       projectMetadataRoots: [...new Set([path.resolve(projectPath), npmPrefix])],
@@ -813,12 +837,18 @@ async function readInstalledCometPackage(
   const rootResult = await runNpmCli(npmCliPath, ['root', '--global'], projectPath);
   const npmRoot = parseNpmAbsolutePath(rootResult, 'npm root --global');
   const primaryGlobalPackageDir = path.join(npmRoot, ...getPackageInstallSubdir(PACKAGE_NAME));
-  const candidateGlobalDir = (await fileExists(path.join(primaryGlobalPackageDir, 'package.json')))
-    ? primaryGlobalPackageDir
-    : (await fileExists(path.join(npmRoot, '@rpamis', 'comet', 'package.json')))
-      ? path.join(npmRoot, '@rpamis', 'comet')
-      : primaryGlobalPackageDir;
-  return readCometPackage(candidateGlobalDir);
+  const upstreamGlobalDir = path.join(npmRoot, '@rpamis', 'comet');
+  if (!(await fileExists(path.join(primaryGlobalPackageDir, 'package.json')))) {
+    if (await fileExists(path.join(upstreamGlobalDir, 'package.json'))) {
+      throw new Error(
+        `Detected upstream package at ${upstreamGlobalDir}, but current Comet CLI only manages "${PACKAGE_NAME}". Please run "npm install -g ${PACKAGE_NAME}" to install the enterprise package.`,
+      );
+    }
+    throw new Error(
+      `Package "${PACKAGE_NAME}" not found in global node_modules (${primaryGlobalPackageDir})`,
+    );
+  }
+  return readCometPackage(primaryGlobalPackageDir);
 }
 
 function parseNpmAbsolutePath(result: CapturedProcessResult, command: string): string {
@@ -899,19 +929,22 @@ async function validateRegistryCometPackage(
 
   let result: CapturedProcessResult;
   try {
+    const validationArgs = [
+      'install',
+      '--prefix',
+      validationDir,
+      '--ignore-scripts',
+      '--no-save',
+      '--package-lock=false',
+      `${PACKAGE_NAME}@${version}`,
+    ];
+    const registry = resolveUpdateRegistry();
+    if (registry) {
+      validationArgs.push('--registry', registry);
+    }
     const install = await runNpmCli(
       npmCliPath,
-      [
-        'install',
-        '--prefix',
-        validationDir,
-        '--ignore-scripts',
-        '--no-save',
-        '--package-lock=false',
-        `${PACKAGE_NAME}@${version}`,
-        '--registry',
-        OFFICIAL_REGISTRY,
-      ],
+      validationArgs,
       validationDir,
       CANDIDATE_INSTALL_LIMITS,
     );
@@ -926,13 +959,7 @@ async function validateRegistryCometPackage(
         'node_modules',
         ...getPackageInstallSubdir(PACKAGE_NAME),
       );
-      const candidateDir = (await fileExists(path.join(primaryCandidateDir, 'package.json')))
-        ? primaryCandidateDir
-        : (await fileExists(
-              path.join(validationDir, 'node_modules', '@rpamis', 'comet', 'package.json'),
-            ))
-          ? path.join(validationDir, 'node_modules', '@rpamis', 'comet')
-          : primaryCandidateDir;
+      const candidateDir = primaryCandidateDir;
       const candidate = await readCometPackage(candidateDir);
       if (candidate.version !== version) {
         result = {
