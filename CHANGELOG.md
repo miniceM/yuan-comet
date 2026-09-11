@@ -10,7 +10,7 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ### Changed
 
-- **Enterprise onboarding**: Initialization now recommends the Classic five-step workflow, explains splitting user stories and changes in DOP, and shows how to start with `/comet-open <change-id>`. Native-only installations explain how to enable Classic first.
+- **Enterprise onboarding**: Initialization now defaults to the Classic workflow, marks Native as not recommended for the current enterprise model environment, and guides Classic users through the five mapped `/sdd-*` stages with an enterprise change ID for `/sdd-open`.
 
 ### Fixed
 
