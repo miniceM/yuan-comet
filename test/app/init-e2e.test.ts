@@ -195,13 +195,21 @@ describe('comet init E2E', () => {
     await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
-  it('offers Native, Classic, and Both with concise user-facing descriptions', async () => {
+  it('offers Classic first and marks Native as not recommended', async () => {
     const { workflowChoiceNames } = await import('../../app/commands/init.js');
 
     expect(workflowChoiceNames('zh')).toEqual([
-      expect.objectContaining({ value: 'native', name: expect.stringContaining('强模型') }),
       expect.objectContaining({ value: 'classic', name: expect.stringContaining('Spec/TDD') }),
+      expect.objectContaining({ value: 'native', name: expect.stringContaining('不推荐') }),
       expect.objectContaining({ value: 'both', name: expect.stringContaining('两套独立入口') }),
+    ]);
+    expect(workflowChoiceNames('en')).toEqual([
+      expect.objectContaining({ value: 'classic' }),
+      expect.objectContaining({
+        value: 'native',
+        name: expect.stringContaining('not recommended'),
+      }),
+      expect.objectContaining({ value: 'both' }),
     ]);
   });
 
@@ -1926,11 +1934,11 @@ describe('comet init E2E', () => {
         expect.objectContaining({
           message: 'Select Comet workflow(s):',
           choices: [
-            expect.objectContaining({ value: 'native' }),
             expect.objectContaining({ value: 'classic' }),
+            expect.objectContaining({ value: 'native' }),
             expect.objectContaining({ value: 'both' }),
           ],
-          default: 'native',
+          default: 'classic',
         }),
       );
       for (const skill of ['comet-native', 'comet-classic']) {
@@ -2136,6 +2144,32 @@ describe('comet init E2E', () => {
       ).resolves.toBeUndefined();
 
       await expect(fs.stat(path.join(tmpDir, 'docs', 'superpowers', 'specs'))).rejects.toThrow();
+    },
+    INIT_E2E_TIMEOUT_MS,
+  );
+
+  it(
+    'shows the enterprise SDD Classic commands after a Classic initialization',
+    async () => {
+      mockExternalSuccess();
+      await fs.mkdir(path.join(tmpDir, '.codex'), { recursive: true });
+
+      const { initCommand } = await import('../../app/commands/init.js');
+      const output = await captureTextOutput(() =>
+        initCommand(tmpDir, {
+          yes: true,
+          language: 'zh',
+          workflow: 'classic',
+        }),
+      );
+
+      expect(output).toContain('/sdd-open ARD123456  — 使用企业内变更号开启变更');
+      expect(output).toContain('/sdd-design  — 制定技术设计和实施计划');
+      expect(output).toContain('/sdd-build  — 按计划实施当前变更');
+      expect(output).toContain('/sdd-verify  — 验证实现和验收结果');
+      expect(output).toContain('/sdd-archive  — 确认归档并完成交付收尾');
+      expect(output).not.toContain('/comet-open');
+      expect(output).not.toContain('定制版本');
     },
     INIT_E2E_TIMEOUT_MS,
   );

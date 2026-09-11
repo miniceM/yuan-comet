@@ -29,6 +29,7 @@ import {
   createWorkingDirs,
   prepareNativeSkillInstallTarget,
 } from '../../domains/skill/platform-install.js';
+import { toProjectedSkillName } from '../../domains/skill/skill-mapping.js';
 import {
   reconcileCometHooksForPlatform,
   reconcileProjectCometHooksForPlatform,
@@ -111,30 +112,30 @@ function workflowChoiceNames(lang: string): Array<{
   if (lang === 'zh') {
     return [
       {
-        name: 'Native — 面向强模型的轻量自主流程，自带澄清、状态、检查与自动推进，不依赖外部 Skill',
-        value: 'native',
-      },
-      {
         name: 'Classic — 面向高约束或较弱模型的完整 Spec/TDD 阶段流程，使用 OpenSpec 与 Superpowers',
         value: 'classic',
       },
       {
-        name: '两者 — 同时安装两套独立入口；/comet 默认使用 Native，也可显式进入 Classic',
+        name: 'Native（不推荐）— 面向强模型的轻量自主流程，自带澄清、状态、检查与自动推进，不依赖外部 Skill',
+        value: 'native',
+      },
+      {
+        name: '两者 — 同时安装两套独立入口；可按需使用 Classic 或 Native',
         value: 'both',
       },
     ];
   }
   return [
     {
-      name: 'Native — lightweight autonomy for strong models, with clarification, state, checks, and auto-progression; no external skills',
-      value: 'native',
-    },
-    {
       name: 'Classic — full Spec/TDD phases for high-control work or weaker models, using OpenSpec and Superpowers',
       value: 'classic',
     },
     {
-      name: 'Both — install two independent entries; /comet defaults to Native and Classic remains explicit',
+      name: 'Native (not recommended) — lightweight autonomy for strong models, with clarification, state, checks, and auto-progression; no external skills',
+      value: 'native',
+    },
+    {
+      name: 'Both — install both independent entries; use Classic or Native as needed',
       value: 'both',
     },
   ];
@@ -150,7 +151,7 @@ async function selectWorkflow(
   return select({
     message: lang === 'zh' ? '选择要初始化的 Comet 模式：' : 'Select Comet workflow(s):',
     choices: workflowChoiceNames(lang),
-    default: suggested,
+    default: suggested === 'both' ? 'both' : 'classic',
   });
 }
 
@@ -494,16 +495,24 @@ function displaySummary(
 
   if (failures.length === 0) {
     console.log(`\n  ${t(lang, 'getStarted')}`);
-    console.log(`    ${t(lang, 'getStartedEnterprise')}`);
-    console.log(`    ${t(lang, 'getStartedDop')}`);
     if (includesWorkflow(workflowSelection, 'classic')) {
-      console.log(`    ${t(lang, 'getStartedOpen')}`);
-      console.log(`    ${t(lang, 'getStartedClassicSteps')}`);
-      console.log(`    ${t(lang, 'getStartedHotfix')}`);
-      console.log(`    ${t(lang, 'getStartedTweak')}`);
+      const printCommand = (
+        canonicalName: string,
+        argument: string,
+        descriptionKey: TranslationKey,
+      ) => {
+        const command = `/${toProjectedSkillName(canonicalName)}`;
+        console.log(
+          `    ${command}${argument ? ` ${argument}` : ''}  — ${t(lang, descriptionKey)}`,
+        );
+      };
+      printCommand('comet-open', 'ARD123456', 'getStartedSddOpen');
+      printCommand('comet-design', '', 'getStartedSddDesign');
+      printCommand('comet-build', '', 'getStartedSddBuild');
+      printCommand('comet-verify', '', 'getStartedSddVerify');
+      printCommand('comet-archive', '', 'getStartedSddArchive');
     } else {
       console.log(`    ${t(lang, 'getStartedClassicInstall')}`);
-      console.log(`    ${t(lang, 'getStartedComet')}`);
     }
   }
   console.log();
