@@ -33,6 +33,7 @@ type PlatformSelectTheme = {
     selectedSummary: (text: string) => string;
     keysHelpTip: (keys: [key: string, action: string][]) => string | undefined;
   };
+  keybindings?: readonly unknown[];
 };
 
 const platformSelectTheme: Theme<PlatformSelectTheme> = {
@@ -44,6 +45,7 @@ const platformSelectTheme: Theme<PlatformSelectTheme> = {
     interval: 80,
     frames: ['-', '\\', '|', '/'],
   },
+  keybindings: [],
   style: {
     answer: (text: string) => styleText('cyan', text),
     message: (text: string) => styleText('bold', text),
