@@ -4,9 +4,17 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ## What's Changed [0.4.1] - 2026-09-10
 
+### Added
+
+- **Background automatic update**: Automatically check npm registry for new versions in a detached background worker after successful `workflow resolve` execution, and synchronously refresh platform skills, rules, and hooks across global installations and registered projects when upgraded, with zero blocking overhead on interactive sessions.
+
 ### Changed
 
 - **Enterprise onboarding**: Initialization now recommends the Classic five-step workflow, explains splitting user stories and changes in DOP, and shows how to start with `/comet-open <change-id>`. Native-only installations explain how to enable Classic first.
+
+### Fixed
+
+- **Runtime package name resolution in update**: Replaced hardcoded `@rpamis/comet` package directory resolution in `comet update` with dynamic `@cli-tools/yuan-comet` package paths and backward-compatible fallback, preventing failures when inspecting or validating self-updates.
 
 ## What's Changed [0.4.0] - 2026-09-08
 

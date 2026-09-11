@@ -942,6 +942,70 @@ bundle
     await bundleDistributeCommand(name, options);
   });
 
+program
+  .command('auto-update-internal-sync', { hidden: true })
+  .description('Internal worker for background target asset synchronization')
+  .option('--transaction <id>', 'Transaction ID')
+  .option('--wait-for-auth', 'Wait for supervisor authorization signal on stdin')
+  .option('--probe', 'Probe compatibility')
+  .action(async (options: { transaction?: string; waitForAuth?: boolean; probe?: boolean }) => {
+    if (options.probe) {
+      console.log(JSON.stringify({ protocolVersion: 1, status: 'ready' }));
+      process.exit(0);
+    }
+
+    if (options.waitForAuth) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error('Timed out waiting for supervisor authorization'));
+        }, 10_000);
+        timer.unref?.();
+
+        process.stdin.setEncoding('utf8');
+        process.stdin.once('data', (chunk) => {
+          clearTimeout(timer);
+          if (String(chunk).includes('START')) {
+            resolve();
+          } else {
+            reject(new Error('Invalid authorization token received'));
+          }
+        });
+      }).catch(() => {
+        process.exit(1);
+      });
+    }
+
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const {
+      inspectInstallationIdentity,
+      readTransactionState,
+      writeTransactionState,
+      syncTargetInventory,
+    } = await import('../../domains/auto-update/index.js');
+
+    const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const identity = inspectInstallationIdentity(pkgRoot);
+    const transaction = readTransactionState(identity.installationId);
+    if (
+      !transaction ||
+      (options.transaction && transaction.transactionId !== options.transaction)
+    ) {
+      process.exit(0);
+    }
+
+    const syncResult = await syncTargetInventory(transaction.targets, {
+      transactionId: transaction.transactionId,
+      lockToken: '',
+      targetVersion: transaction.targetVersion,
+      protocolVersion: 1,
+    });
+
+    transaction.targets = syncResult.results;
+    writeTransactionState(transaction);
+    process.exit(syncResult.hasFailures ? 1 : 0);
+  });
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
