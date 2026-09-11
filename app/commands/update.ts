@@ -89,6 +89,10 @@ import type { CommandExecutionResult } from './command-result.js';
 const PACKAGE_NAME = '@cli-tools/yuan-comet';
 const OFFICIAL_REGISTRY = 'https://registry.npmjs.org';
 
+function getPackageInstallSubdir(packageName: string = PACKAGE_NAME): string[] {
+  return packageName.split('/');
+}
+
 interface UpdateOptions {
   json?: boolean;
   language?: string;
@@ -106,6 +110,7 @@ interface UpdateOptions {
   npmSkipReason?: string;
   skipPackageSelfUpdate?: boolean;
   platform?: string;
+  homeDir?: string;
 }
 
 async function refreshGlobalWorkflowConfig(
@@ -493,7 +498,15 @@ async function detectCometPackageScope(
   projectPath: string,
   packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'),
 ): Promise<InstallScope> {
-  const localPackageRoot = path.join(projectPath, 'node_modules', '@rpamis', 'comet');
+  const primaryPackageRoot = path.join(
+    projectPath,
+    'node_modules',
+    ...getPackageInstallSubdir(PACKAGE_NAME),
+  );
+  const legacyPackageRoot = path.join(projectPath, 'node_modules', '@rpamis', 'comet');
+  const localPackageRoot = (await fileExists(primaryPackageRoot))
+    ? primaryPackageRoot
+    : legacyPackageRoot;
   if (isSameOrInside(packageRoot, localPackageRoot)) return 'project';
 
   const packageJsonPath = path.join(projectPath, 'package.json');
@@ -784,7 +797,13 @@ async function readInstalledCometPackage(
     ]);
     const npmRoot = parseNpmAbsolutePath(rootResult, 'npm root');
     const npmPrefix = parseNpmAbsolutePath(prefixResult, 'npm prefix');
-    const installedPackage = await readCometPackage(path.join(npmRoot, '@rpamis', 'comet'));
+    const primaryPackageDir = path.join(npmRoot, ...getPackageInstallSubdir(PACKAGE_NAME));
+    const candidateDir = (await fileExists(path.join(primaryPackageDir, 'package.json')))
+      ? primaryPackageDir
+      : (await fileExists(path.join(npmRoot, '@rpamis', 'comet', 'package.json')))
+        ? path.join(npmRoot, '@rpamis', 'comet')
+        : primaryPackageDir;
+    const installedPackage = await readCometPackage(candidateDir);
     return {
       ...installedPackage,
       projectMetadataRoots: [...new Set([path.resolve(projectPath), npmPrefix])],
@@ -793,7 +812,13 @@ async function readInstalledCometPackage(
 
   const rootResult = await runNpmCli(npmCliPath, ['root', '--global'], projectPath);
   const npmRoot = parseNpmAbsolutePath(rootResult, 'npm root --global');
-  return readCometPackage(path.join(npmRoot, '@rpamis', 'comet'));
+  const primaryGlobalPackageDir = path.join(npmRoot, ...getPackageInstallSubdir(PACKAGE_NAME));
+  const candidateGlobalDir = (await fileExists(path.join(primaryGlobalPackageDir, 'package.json')))
+    ? primaryGlobalPackageDir
+    : (await fileExists(path.join(npmRoot, '@rpamis', 'comet', 'package.json')))
+      ? path.join(npmRoot, '@rpamis', 'comet')
+      : primaryGlobalPackageDir;
+  return readCometPackage(candidateGlobalDir);
 }
 
 function parseNpmAbsolutePath(result: CapturedProcessResult, command: string): string {
@@ -896,9 +921,19 @@ async function validateRegistryCometPackage(
         reason: `candidate package install failed: ${install.reason ?? 'unknown error'}`,
       };
     } else {
-      const candidate = await readCometPackage(
-        path.join(validationDir, 'node_modules', '@rpamis', 'comet'),
+      const primaryCandidateDir = path.join(
+        validationDir,
+        'node_modules',
+        ...getPackageInstallSubdir(PACKAGE_NAME),
       );
+      const candidateDir = (await fileExists(path.join(primaryCandidateDir, 'package.json')))
+        ? primaryCandidateDir
+        : (await fileExists(
+              path.join(validationDir, 'node_modules', '@rpamis', 'comet', 'package.json'),
+            ))
+          ? path.join(validationDir, 'node_modules', '@rpamis', 'comet')
+          : primaryCandidateDir;
+      const candidate = await readCometPackage(candidateDir);
       if (candidate.version !== version) {
         result = {
           success: false,
@@ -2350,8 +2385,36 @@ export async function updateCommand(
   const projectPath = path.resolve(targetPath);
   const log = options.json ? () => undefined : console.log;
   const lang = options.language ?? 'en';
-
   assertProjectScopeOptions(options);
+  const homeDir = options.homeDir ?? os.homedir();
+  const globalLockPath = path.join(homeDir, '.comet', 'auto-update.lock');
+  if (await fileExists(globalLockPath)) {
+    try {
+      const rawLock = await readJson<{ supervisorPid?: number; activeWorkerPid?: number }>(
+        globalLockPath,
+      );
+      const isAlive = (pid?: number) => {
+        if (!pid) return false;
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      if (isAlive(rawLock.supervisorPid) || isAlive(rawLock.activeWorkerPid)) {
+        const errorMsg = 'Another Comet update process is currently running';
+        if (options.json) {
+          console.log(JSON.stringify({ status: 'failed', error: errorMsg }, null, 2));
+          return { status: 'incomplete' };
+        }
+        log(`\n  Warning: ${errorMsg}. Aborting to prevent concurrent writes.\n`);
+        return { status: 'incomplete' };
+      }
+    } catch {
+      // ignore
+    }
+  }
   if (options.platform && options.allProjects) {
     throw new Error('--platform cannot be combined with --all-projects');
   }
@@ -2452,6 +2515,14 @@ export {
   detectInstalledCometTargets,
   formatNpmUpdateCommand,
   formatSkillUpdateCommand,
+  hasUpdateFailures,
   resolveNpmSelfUpdatePlan,
+  updateSingleProject,
 };
-export type { InstalledCometTarget, SkillLanguage, TranslationKey };
+export type {
+  InstalledCometTarget,
+  SingleProjectUpdateResult,
+  SkillLanguage,
+  TranslationKey,
+  UpdateOptions,
+};

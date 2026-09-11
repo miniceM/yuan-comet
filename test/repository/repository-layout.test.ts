@@ -79,6 +79,7 @@ describe('repository layout registry', () => {
     expect(layout.appModules).toEqual(['cli', 'commands']);
     expect(layout.domainModules).toEqual([
       'agent-learning',
+      'auto-update',
       'bundle',
       'comet-classic',
       'comet-entry',
@@ -118,6 +119,10 @@ describe('repository layout registry', () => {
     expect(layout.allowedTopLevelEntries).toContain('.superpowers');
     expect(layout.allowedTopLevelEntries).toContain('codecov.yml');
     expect(layout.allowedTopLevelEntries).not.toContain('src');
-    expect(layout.allowedCodeFiles).toEqual(['bin/fast-runtime-router.js']);
+    expect(layout.allowedCodeFiles).toEqual([
+      'bin/fast-runtime-router.js',
+      'bin/auto-update-worker.js',
+      'bin/auto-update-install-runner.js',
+    ]);
   });
 });
