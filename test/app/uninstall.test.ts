@@ -3296,4 +3296,26 @@ describe('uninstallCommand interactive selection', () => {
     expect(claude).toContain('Also keep this.');
     expect(claude).not.toContain('<comet-ambient-resume>');
   });
+
+  it('identifies and uninstalls targets with projected sdd skills', async () => {
+    const projectDir = path.join(tmpDir, 'project-sdd-uninstall');
+    await fs.mkdir(path.join(projectDir, '.claude', 'skills', 'sdd'), { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, '.claude', 'skills', 'sdd', 'SKILL.md'),
+      '---\nname: sdd\ndescription: Enterprise SDD\n---\n# SDD\n',
+    );
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let jsonOutput: string;
+    try {
+      await uninstallCommand(projectDir, { force: true, json: true });
+      jsonOutput = log.mock.calls.map((c) => c.join(' ')).join('\n');
+    } finally {
+      log.mockRestore();
+    }
+
+    const result = JSON.parse(jsonOutput);
+    expect(result.summary.targetsProcessed).toBeGreaterThan(0);
+    expect(result.targets[0].platform).toBe('claude');
+  });
 });

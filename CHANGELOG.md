@@ -14,7 +14,8 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ### Fixed
 
-- **Runtime package name resolution in update**: Replaced hardcoded `@rpamis/comet` package directory resolution in `comet update` with dynamic `@cli-tools/yuan-comet` package paths and backward-compatible fallback, preventing failures when inspecting or validating self-updates.
+- **CLI package target and registry resolution**: Prevent `comet update` and background auto-update from targeting upstream `@rpamis/comet` or falling back into mixed upstream runtime directories, enforce enterprise package identity (`@cli-tools/yuan-comet`), support custom enterprise npm registries via `COMET_ENTERPRISE_NPM_REGISTRY`, and respect user environment npm configurations without hardcoding the public npm registry.
+- **Enterprise projection skill detection**: Extend `doctor`, `update`, and `uninstall` commands to properly recognize installed `sdd` and `sdd-*` enterprise projection skills alongside canonical skills when checking health sentinel paths, refreshing local skills, and cleaning up installations.
 
 ## What's Changed [0.4.0] - 2026-09-08
 

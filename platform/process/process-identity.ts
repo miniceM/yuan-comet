@@ -39,17 +39,24 @@ async function inspectProcessIdentity(pid: number): Promise<string | null> {
         'v1.0',
         'powershell.exe',
       );
-      const started = runExternalCommand(
-        executable,
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks.ToString()`,
-        ],
-        { timeoutMs: 15000, maxBufferBytes: 4096 },
-      ).trim();
-      return /^\d+$/u.test(started) ? `win32:${started}` : null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const started = runExternalCommand(
+            executable,
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-Command',
+              `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks.ToString()`,
+            ],
+            { timeoutMs: 30000, maxBufferBytes: 4096 },
+          ).trim();
+          if (/^\d+$/u.test(started)) return `win32:${started}`;
+        } catch {
+          // Retry on transient cold-start timeouts under CI runner load
+        }
+      }
+      return null;
     }
     if (process.platform === 'darwin') {
       const started = runExternalCommand('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {

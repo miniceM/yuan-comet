@@ -100,7 +100,9 @@ async function hasOpenCodePluginSuperpowers(): Promise<boolean> {
 }
 
 async function hasOpenCodeCometCommands(baseDir: string, skillsDir: string, entries: string[]) {
-  const cometEntries = entries.filter((entry) => entry.startsWith('comet'));
+  const cometEntries = entries.filter(
+    (entry) => entry.startsWith('comet') || entry.startsWith('sdd'),
+  );
   if (cometEntries.length === 0) return false;
 
   const commandsDir = path.join(baseDir, skillsDir, 'commands');
@@ -174,7 +176,7 @@ async function hasSkills(
         }
         break;
       }
-      if (entries.some((e) => e.startsWith('comet'))) return true;
+      if (entries.some((e) => e.startsWith('comet') || e.startsWith('sdd'))) return true;
       break;
   }
 
@@ -210,7 +212,7 @@ async function hasSkills(
           }
           break;
         }
-        if (globalEntries.some((e) => e.startsWith('comet'))) return true;
+        if (globalEntries.some((e) => e.startsWith('comet') || e.startsWith('sdd'))) return true;
         break;
     }
   }

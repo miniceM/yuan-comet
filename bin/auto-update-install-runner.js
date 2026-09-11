@@ -20,9 +20,15 @@ process.stdin.once('data', (chunk) => {
     process.exit(1);
   }
 
+  const installArgs = ['install', '-g', `@cli-tools/yuan-comet@${version}`];
+  const customRegistry = process.env.COMET_ENTERPRISE_NPM_REGISTRY?.trim();
+  if (customRegistry) {
+    installArgs.push('--registry', customRegistry);
+  }
+
   const child = spawn(
     'npm',
-    ['install', '-g', `@cli-tools/yuan-comet@${version}`, '--registry', 'https://registry.npmjs.org'],
+    installArgs,
     {
       stdio: 'inherit',
       shell: process.platform === 'win32',

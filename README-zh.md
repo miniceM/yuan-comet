@@ -203,7 +203,7 @@ classic:
 对于直接使用通用 `skills` CLI 的平台，可以用下面的方式安装 Comet skill 包：
 
 ```bash
-npx skills add rpamis/comet
+npx skills add miniceM/yuan-comet
 ```
 
 ## 运行截图

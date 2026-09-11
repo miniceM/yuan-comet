@@ -269,20 +269,16 @@ function handleInstallFailure(
 async function executePackageInstall(version: string, lock: AutoUpdateLock): Promise<boolean> {
   // 通过独立包装进程或 npm 命令安装，并向 lock 登记 PID
   return new Promise((resolve) => {
-    const child = spawn(
-      'npm',
-      [
-        'install',
-        '-g',
-        `@cli-tools/yuan-comet@${version}`,
-        '--registry',
-        'https://registry.npmjs.org',
-      ],
-      {
-        stdio: 'ignore',
-        shell: process.platform === 'win32',
-      },
-    );
+    const installArgs = ['install', '-g', `@cli-tools/yuan-comet@${version}`];
+    const customRegistry = process.env.COMET_ENTERPRISE_NPM_REGISTRY?.trim();
+    if (customRegistry) {
+      installArgs.push('--registry', customRegistry);
+    }
+
+    const child = spawn('npm', installArgs, {
+      stdio: 'ignore',
+      shell: process.platform === 'win32',
+    });
 
     if (child.pid) {
       lock.registerActiveWorkerPid(child.pid);

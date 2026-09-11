@@ -239,7 +239,10 @@ describe('update command helpers', () => {
     await fs.mkdir(defaultHome, { recursive: true });
     defaultHomedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(defaultHome);
     fakeGlobalNpmRoot = path.join(tmpDir, 'global node_modules & safe');
-    await writeFakeCometPackage(path.join(fakeGlobalNpmRoot, '@rpamis', 'comet'), '0.4.0-beta.7');
+    await writeFakeCometPackage(
+      path.join(fakeGlobalNpmRoot, '@cli-tools', 'yuan-comet'),
+      '0.4.0-beta.7',
+    );
     candidateVersionOverride = null;
     candidateCommandFailure = null;
     candidateCommandHang = false;
@@ -312,11 +315,11 @@ describe('update command helpers', () => {
             const packageSpec = npmArgs.find((arg) => arg.startsWith('@cli-tools/yuan-comet@'))!;
             const requestedVersion = packageSpec.slice('@cli-tools/yuan-comet@'.length);
             await writeFakeCometPackage(
-              path.join(prefix, 'node_modules', '@rpamis', 'comet'),
+              path.join(prefix, 'node_modules', '@cli-tools', 'yuan-comet'),
               candidateVersionOverride ?? requestedVersion,
             );
             if (candidateBinEscapesPackage) {
-              const packageRoot = path.join(prefix, 'node_modules', '@rpamis', 'comet');
+              const packageRoot = path.join(prefix, 'node_modules', '@cli-tools', 'yuan-comet');
               const outsideDir = path.join(tmpDir, 'candidate-bin-outside');
               await fs.mkdir(outsideDir, { recursive: true });
               await fs.writeFile(path.join(outsideDir, 'comet.js'), '#!/usr/bin/env node\n');
@@ -364,11 +367,11 @@ describe('update command helpers', () => {
             const packageSpec = npmArgs.find((arg) => arg.startsWith('@cli-tools/yuan-comet@'))!;
             const requestedVersion = packageSpec.slice('@cli-tools/yuan-comet@'.length);
             const packageRoot = npmArgs.includes('-g')
-              ? path.join(fakeGlobalNpmRoot, '@rpamis', 'comet')
+              ? path.join(fakeGlobalNpmRoot, '@cli-tools', 'yuan-comet')
               : path.join(
                   projectNpmRootOverride ?? path.join(cwd, 'node_modules'),
-                  '@rpamis',
-                  'comet',
+                  '@cli-tools',
+                  'yuan-comet',
                 );
             if (targetInstallFailureVersion === requestedVersion) {
               if (mutateProjectMetadataOnFailure && !npmArgs.includes('-g')) {
@@ -1013,7 +1016,7 @@ describe('update command helpers', () => {
 
   it('detects project package scope from local node_modules install path', async () => {
     const projectDir = path.join(tmpDir, 'project');
-    const packageRoot = path.join(projectDir, 'node_modules', '@rpamis', 'comet');
+    const packageRoot = path.join(projectDir, 'node_modules', '@cli-tools', 'yuan-comet');
 
     await expect(detectCometPackageScope(projectDir, packageRoot)).resolves.toBe('project');
   });
@@ -1037,20 +1040,22 @@ describe('update command helpers', () => {
     await expect(detectCometPackageScope(projectDir, tmpDir)).resolves.toBe('global');
   });
 
-  it('builds npm update args preserving package install scope with official registry', () => {
-    expect(buildNpmUpdateArgs('global')).toEqual([
-      'install',
-      '-g',
-      '@cli-tools/yuan-comet@latest',
-      '--registry',
-      'https://registry.npmjs.org',
-    ]);
-    expect(buildNpmUpdateArgs('project')).toEqual([
-      'install',
-      '@cli-tools/yuan-comet@latest',
-      '--registry',
-      'https://registry.npmjs.org',
-    ]);
+  it('builds npm update args preserving package install scope with enterprise registry support', () => {
+    expect(buildNpmUpdateArgs('global')).toEqual(['install', '-g', '@cli-tools/yuan-comet@latest']);
+    expect(buildNpmUpdateArgs('project')).toEqual(['install', '@cli-tools/yuan-comet@latest']);
+
+    process.env.COMET_ENTERPRISE_NPM_REGISTRY = 'https://npm.corp.internal';
+    try {
+      expect(buildNpmUpdateArgs('global')).toEqual([
+        'install',
+        '-g',
+        '@cli-tools/yuan-comet@latest',
+        '--registry',
+        'https://npm.corp.internal',
+      ]);
+    } finally {
+      delete process.env.COMET_ENTERPRISE_NPM_REGISTRY;
+    }
   });
 
   it('blocks a prerelease downgrade before invoking npm', async () => {
@@ -1083,9 +1088,14 @@ describe('update command helpers', () => {
     });
 
     const project = path.join(tmpDir, 'package-scope');
-    await fs.mkdir(path.join(project, 'node_modules', '@rpamis', 'comet'), { recursive: true });
+    await fs.mkdir(path.join(project, 'node_modules', '@cli-tools', 'yuan-comet'), {
+      recursive: true,
+    });
     await expect(
-      detectCometPackageScope(project, path.join(project, 'node_modules', '@rpamis', 'comet')),
+      detectCometPackageScope(
+        project,
+        path.join(project, 'node_modules', '@cli-tools', 'yuan-comet'),
+      ),
     ).resolves.toBe('project');
     await fs.rm(path.join(project, 'node_modules'), { recursive: true, force: true });
     await fs.writeFile(
@@ -1197,7 +1207,10 @@ describe('update command helpers', () => {
   it('compares against the actual installed global package instead of the running CLI version', async () => {
     await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'comet'), { recursive: true });
     await fs.writeFile(path.join(tmpDir, '.claude', 'skills', 'comet', 'SKILL.md'), '# Comet');
-    await writeFakeCometPackage(path.join(fakeGlobalNpmRoot, '@rpamis', 'comet'), '0.4.0-beta.9');
+    await writeFakeCometPackage(
+      path.join(fakeGlobalNpmRoot, '@cli-tools', 'yuan-comet'),
+      '0.4.0-beta.9',
+    );
     mockedGetLatestVersion.mockResolvedValue('0.4.0-beta.8');
 
     const fakeHome = path.join(tmpDir, 'fake-home-actual-global-version');
@@ -1233,8 +1246,7 @@ describe('update command helpers', () => {
       expect(result.npm).toMatchObject({
         scope: 'global',
         status: 'updated',
-        command:
-          'npm install -g @cli-tools/yuan-comet@0.4.0-beta.8 --registry https://registry.npmjs.org',
+        command: 'npm install -g @cli-tools/yuan-comet@0.4.0-beta.8',
       });
     } finally {
       log.mockRestore();
@@ -1247,8 +1259,6 @@ describe('update command helpers', () => {
       'install',
       '-g',
       '@cli-tools/yuan-comet@0.4.0-beta.8',
-      '--registry',
-      'https://registry.npmjs.org',
     ]);
     expect(mockedSpawn.mock.calls.every((call) => call[2]?.shell === false)).toBe(true);
     expect(mockedSpawn.mock.calls.every((call) => call[0] === process.execPath)).toBe(true);
@@ -1504,7 +1514,7 @@ describe('update command helpers', () => {
     await fs.writeFile(path.join(projectDir, 'package.json'), packageJson);
     await fs.writeFile(path.join(projectDir, 'package-lock.json'), packageLock);
     await writeFakeCometPackage(
-      path.join(projectDir, 'node_modules', '@rpamis', 'comet'),
+      path.join(projectDir, 'node_modules', '@cli-tools', 'yuan-comet'),
       '0.4.0-beta.7',
     );
     targetInstallFailureVersion = '0.4.0-beta.8';
@@ -1559,7 +1569,7 @@ describe('update command helpers', () => {
     projectNpmRootOverride = path.join(workspaceRoot, 'node_modules');
     projectNpmPrefixOverride = workspaceRoot;
     await writeFakeCometPackage(
-      path.join(projectNpmRootOverride, '@rpamis', 'comet'),
+      path.join(projectNpmRootOverride, '@cli-tools', 'yuan-comet'),
       '0.4.0-beta.7',
     );
     targetInstallFailureVersion = '0.4.0-beta.8';
@@ -1630,12 +1640,17 @@ describe('update command helpers', () => {
   });
 
   it('formats the npm update command for friendly console output', () => {
-    expect(formatNpmUpdateCommand('global')).toBe(
-      'npm install -g @cli-tools/yuan-comet@latest --registry https://registry.npmjs.org',
-    );
-    expect(formatNpmUpdateCommand('project')).toBe(
-      'npm install @cli-tools/yuan-comet@latest --registry https://registry.npmjs.org',
-    );
+    expect(formatNpmUpdateCommand('global')).toBe('npm install -g @cli-tools/yuan-comet@latest');
+    expect(formatNpmUpdateCommand('project')).toBe('npm install @cli-tools/yuan-comet@latest');
+
+    process.env.COMET_ENTERPRISE_NPM_REGISTRY = 'https://npm.corp.internal';
+    try {
+      expect(formatNpmUpdateCommand('global')).toBe(
+        'npm install -g @cli-tools/yuan-comet@latest --registry https://npm.corp.internal',
+      );
+    } finally {
+      delete process.env.COMET_ENTERPRISE_NPM_REGISTRY;
+    }
   });
 
   it('formats the skill update command with scope, platform, and language source', () => {
@@ -1807,8 +1822,6 @@ describe('update command helpers', () => {
       'install',
       '-g',
       '@cli-tools/yuan-comet@0.4.0-beta.8',
-      '--registry',
-      'https://registry.npmjs.org',
     ]);
     expect(installCalls.some((call) => !(call[1]?.slice(1) ?? []).includes('-g'))).toBe(false);
   });
@@ -4265,5 +4278,115 @@ describe('update command helpers', () => {
     const config = await fs.readFile(path.join(fakeHome, '.comet', 'config.yaml'), 'utf-8');
     expect(config).toContain('language: en');
     expect(config).not.toMatch(/^language:/mu);
+  });
+
+  describe('enterprise package isolation and upstream protection (issue #46)', () => {
+    it('refuses to update when only legacy upstream package @rpamis/comet exists', async () => {
+      // 移除假企业包，构造仅存在上游包的环境
+      await fs.rm(path.join(fakeGlobalNpmRoot, '@cli-tools'), { recursive: true, force: true });
+      const upstreamDir = path.join(fakeGlobalNpmRoot, '@rpamis', 'comet');
+      await fs.mkdir(path.join(upstreamDir, 'bin'), { recursive: true });
+      await fs.writeFile(
+        path.join(upstreamDir, 'package.json'),
+        JSON.stringify({
+          name: '@rpamis/comet',
+          version: '0.4.0-beta.7',
+          bin: { comet: 'bin/comet.js' },
+        }),
+      );
+      await fs.writeFile(path.join(upstreamDir, 'bin', 'comet.js'), '#!/usr/bin/env node\n');
+
+      const projectDir = path.join(tmpDir, 'project-upstream-only');
+      await fs.mkdir(path.join(projectDir, '.claude', 'skills', 'comet'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, '.claude', 'skills', 'comet', 'SKILL.md'),
+        '# Comet',
+      );
+
+      mockedGetLatestVersion.mockResolvedValue('0.4.0');
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await updateCommand(projectDir, {
+          currentProject: true,
+          selfUpdate: true,
+          json: true,
+        });
+        const result = JSON.parse(log.mock.calls.map((call) => call.join(' ')).join('\n'));
+        expect(result.npm).toMatchObject({
+          status: 'failed',
+          reason: expect.stringContaining('Detected upstream package'),
+        });
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('correctly isolates enterprise package when both @rpamis/comet and @cli-tools/yuan-comet coexist', async () => {
+      // 同时写入上游包与企业包
+      const upstreamDir = path.join(fakeGlobalNpmRoot, '@rpamis', 'comet');
+      await fs.mkdir(path.join(upstreamDir, 'bin'), { recursive: true });
+      await fs.writeFile(
+        path.join(upstreamDir, 'package.json'),
+        JSON.stringify({ name: '@rpamis/comet', version: '0.3.9', bin: { comet: 'bin/comet.js' } }),
+      );
+      await fs.writeFile(path.join(upstreamDir, 'bin', 'comet.js'), '#!/usr/bin/env node\n');
+
+      await writeFakeCometPackage(
+        path.join(fakeGlobalNpmRoot, '@cli-tools', 'yuan-comet'),
+        '0.4.0-beta.7',
+      );
+
+      const projectDir = path.join(tmpDir, 'project-dual-packages');
+      await fs.mkdir(path.join(projectDir, '.claude', 'skills', 'comet'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, '.claude', 'skills', 'comet', 'SKILL.md'),
+        '# Comet',
+      );
+
+      mockedGetLatestVersion.mockResolvedValue('0.4.0-beta.8');
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await updateCommand(projectDir, {
+          currentProject: true,
+          selfUpdate: true,
+          json: true,
+        });
+        const result = JSON.parse(log.mock.calls.map((call) => call.join(' ')).join('\n'));
+        expect(result.npm).toMatchObject({
+          status: 'updated',
+          scope: 'global',
+          command: expect.stringContaining('@cli-tools/yuan-comet@0.4.0-beta.8'),
+        });
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('identifies and updates project installations with projected sdd skills', async () => {
+      const projectDir = path.join(tmpDir, 'project-with-sdd-skills');
+      await fs.mkdir(path.join(projectDir, '.claude', 'skills', 'sdd'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, '.claude', 'skills', 'sdd', 'SKILL.md'),
+        '---\nname: sdd\ndescription: Enterprise SDD\n---\n# SDD\n',
+      );
+
+      const targets = await detectInstalledCometTargets(projectDir, { scopes: ['project'] });
+      expect(targets.length).toBeGreaterThan(0);
+      expect(targets[0].platform.id).toBe('claude');
+
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await updateCommand(projectDir, {
+          currentProject: true,
+          skipNpm: true,
+          json: true,
+        });
+        const result = JSON.parse(log.mock.calls.map((call) => call.join(' ')).join('\n'));
+        expect(result.skills.totalCopied).toBeGreaterThan(0);
+        expect(result.skills.totalFailed).toBe(0);
+      } finally {
+        log.mockRestore();
+      }
+    });
   });
 });

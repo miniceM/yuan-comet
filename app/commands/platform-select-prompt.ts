@@ -33,6 +33,7 @@ type PlatformSelectTheme = {
     selectedSummary: (text: string) => string;
     keysHelpTip: (keys: [key: string, action: string][]) => string | undefined;
   };
+  keybindings?: readonly unknown[];
 };
 
 const platformSelectTheme: Theme<PlatformSelectTheme> = {

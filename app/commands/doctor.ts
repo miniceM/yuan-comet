@@ -27,6 +27,7 @@ import {
   reconcileCometHooksForPlatform,
   reconcileProjectCometHooksForPlatform,
 } from '../../domains/skill/hook-lifecycle.js';
+import { projectSkillPath } from '../../domains/skill/skill-mapping.js';
 import {
   OPENCODE_PLUGIN_FILE,
   OPENCODE_RUNNER_FILE,
@@ -1108,8 +1109,17 @@ async function checkSkillCompleteness(
         const candidateMissing: string[] = [];
         for (const relPath of managedSkills) {
           const fullPath = path.join(base.baseDir, skillsDir, 'skills', relPath);
-          if (await fileExists(fullPath)) candidatePresent.push(relPath);
-          else candidateMissing.push(relPath);
+          const projectedFullPath = path.join(
+            base.baseDir,
+            skillsDir,
+            'skills',
+            projectSkillPath(relPath),
+          );
+          if ((await fileExists(fullPath)) || (await fileExists(projectedFullPath))) {
+            candidatePresent.push(relPath);
+          } else {
+            candidateMissing.push(relPath);
+          }
         }
         if (candidatePresent.length === 0) continue;
         detectedSkillsDir = skillsDir;
@@ -1629,11 +1639,16 @@ async function hasManagedInstall(
   const manifest = await readManifest();
   const sentinel = getManagedSkillPaths(manifest)[0];
   if (!sentinel) return false;
+  const projectedSentinel = projectSkillPath(sentinel);
   return (
     await Promise.all(
-      getPlatformSkillsDirs(platform, scope).map((skillsDir) =>
-        fileExists(path.join(baseDir, skillsDir, 'skills', ...sentinel.split('/'))),
-      ),
+      getPlatformSkillsDirs(platform, scope).map(async (skillsDir) => {
+        const canonicalExists = await fileExists(
+          path.join(baseDir, skillsDir, 'skills', ...sentinel.split('/')),
+        );
+        if (canonicalExists) return true;
+        return fileExists(path.join(baseDir, skillsDir, 'skills', ...projectedSentinel.split('/')));
+      }),
     )
   ).some(Boolean);
 }

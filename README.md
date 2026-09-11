@@ -220,7 +220,7 @@ Cloud Knowledge and self-hosted PR providers remain advanced settings; see [Nati
 For platforms that use the generic `skills` CLI directly, you can install the Comet skill package with:
 
 ```bash
-npx skills add rpamis/comet
+npx skills add miniceM/yuan-comet
 ```
 
 ## Screenshots

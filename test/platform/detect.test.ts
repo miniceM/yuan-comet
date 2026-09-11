@@ -431,6 +431,11 @@ describe('detect', () => {
       expect(await hasSkills(fakeHome, antigravity2, 'comet', [], 'global')).toBe(true);
     });
 
+    it('detects enterprise projected sdd skills for comet component', async () => {
+      await fs.mkdir(path.join(tmpDir, '.claude', 'skills', 'sdd'), { recursive: true });
+      expect(await hasSkills(tmpDir, mockPlatform, 'comet')).toBe(true);
+    });
+
     it('returns false for missing skills', async () => {
       await fs.mkdir(path.join(tmpDir, '.claude', 'skills'), { recursive: true });
       expect(await hasSkills(tmpDir, mockPlatform, 'comet')).toBe(false);
