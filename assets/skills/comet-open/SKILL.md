@@ -1,6 +1,6 @@
 ---
 name: comet-open
-description: "Phase 1 of Comet Classic — open an OpenSpec change and stand up its proposal/design/tasks/.comet.yaml artifacts."
+description: 'Phase 1 of Comet Classic — open an OpenSpec change and stand up its proposal/design/tasks/.comet.yaml artifacts.'
 ---
 
 # Comet Phase 1: Open
@@ -66,6 +66,7 @@ Before starting requirement exploration and change creation, check enterprise id
 
 1. **iam Authentication Check**:
    Run the authentication status command:
+
    ```bash
    iam auth status --json
    ```
@@ -74,6 +75,7 @@ Before starting requirement exploration and change creation, check enterprise id
 
 2. **dop CLI Availability Check**:
    Run:
+
    ```bash
    dop change list
    ```
@@ -94,7 +96,7 @@ Before entering requirement clarification, prepare the requirement context based
      ```
      Retrieve the complete requirement details for the change, including `summary`, `description`, `storyAC` (acceptance criteria for user stories), `subSystems` (associated subsystems), and `userStory` (user stories and release schedule).
      If fetching details fails (e.g. network timeout or change not found), output a warning and allow the user to provide or confirm requirement details manually to continue.
-   - **Natural Language Input**: If the user input is a narrative description rather than a change ID, and `dop` is available, run `dop change list` (or `dop change list --json`) to display candidate changes for the user to choose from or enter a `change-id`; the user may also skip to proceed with pure natural language.
+   - **Natural Language Input**: If the user input is a narrative description rather than a change ID, and `dop` is available, first reuse the candidate list successfully returned by Step 0d in the same execution; run `dop change list` (or `dop change list --json`) only when that result is incomplete or invalid, then display candidate changes for the user to choose from or enter a `change-id`; the user may also skip to proceed with pure natural language.
 2. **Requirement Context Injection**:
    - Use the retrieved or confirmed `summary`, `description`, `storyAC`, `subSystems`, and `userStory` as the source of truth, integrating them directly into the clarification summary so that goals, non-goals, scope boundaries, and draft acceptance scenarios align with them.
    - In the subsequent `proposal.md`, prioritize referencing DOP requirement contents (combining `summary`, `description`, and `storyAC`) for the business context and overall acceptance criteria.
@@ -103,9 +105,13 @@ Before entering requirement clarification, prepare the requirement context based
 **Immediately execute:** Use the Skill tool to load the `openspec-explore` skill. Skipping this step is prohibited.
 
 <!-- external-openspec-skill-override -->
+
 **External OpenSpec Skill override:** After loading, use only its exploration method. Do not execute any instruction that invokes the official CLI directly, changes to a fixed cwd, or reads or writes a fixed physical OpenSpec path. Route every CLI call through `comet classic openspec -- <args...>` and replace every file path with the `<classic-*>` logical roots bound for this run.
 
-After the skill loads, explore the problem space following its guidance, but do not treat one Q&A turn as sufficient clarification. You must continue asking, align with the user, and form a clarification summary covering:
+**Comet exploration integration rule:** Use the supplied request, DOP information, and confirmations that remain valid. End clarification when the information is sufficient, not after a prescribed number of turns. When the following information is complete, form the resolved brief directly; zero or one additional question round is allowed. Batch only critical gaps that would change scope, approach, or risk. Label unconfirmed inferences as pending, never as user-confirmed facts. This rule takes precedence over repeated-question requirements in the external exploration skill.
+
+The clarification summary covers:
+
 - Goals: the problem the user truly wants to solve and the expected outcome
 - Non-goals: what is explicitly out of scope for this change
 - Scope boundaries: included/excluded modules, users, platforms, or data
@@ -119,6 +125,7 @@ The clarification summary must include: goals, non-goals, scope boundaries, key 
 When the user input is a large PRD, roadmap, complete product plan, or the clarification summary shows multiple independent capabilities, modules, user journeys, or milestones, must evaluate whether it should be split into multiple changes before creating OpenSpec artifacts.
 
 The split preflight must be based on clarified information and output a proposed split list. Each proposed split item must include:
+
 - Suggested change name
 - Goals and scope boundaries
 - Explicit non-goals
@@ -126,6 +133,7 @@ The split preflight must be based on clarified information and output a proposed
 - Core acceptance scenarios
 
 Recommend splitting when any condition applies:
+
 - The PRD contains multiple capabilities that can be independently designed, built, verified, and archived
 - Multiple modules or user journeys are involved, and part of them can be delivered independently
 - Clear phased milestones exist
@@ -135,6 +143,7 @@ Recommend splitting when any condition applies:
 When splitting is recommended, must follow the `comet-classic/reference/decision-point.md` protocol to pause and wait for the user's choice.
 
 The user choices must include:
+
 - "Create multiple OpenSpec changes" — create independent changes from the proposed split
 - "Keep everything as one change" — continue the single-change flow and record the reason for not splitting in proposal/design/tasks
 - "Adjust the split plan before continuing" — after the user describes the adjustment, output the revised proposed split list and ask for confirmation again
@@ -157,6 +166,7 @@ comet state check <name> design
 ```
 
 The OpenSpec JSON must satisfy all of these conditions:
+
 - Resolved `changeRoot` must equal the resolver-bound `<classic-change-dir>`; stop if it does not, because Classic runtime does not support an external change root
 - The schema must include core artifact ids `proposal`, `design`, and `tasks`; extra artifacts are allowed, but a missing core id is an incompatible schema
 - Every artifact listed in `applyRequires` must be `done` in `artifacts`
@@ -187,11 +197,13 @@ Do not run `comet classic openspec -- new change` or create proposal/design/task
 **Immediately execute:** Use the Skill tool to load the `openspec-new-change` skill. Skipping this step is prohibited.
 
 <!-- external-openspec-skill-override -->
+
 **External OpenSpec Skill override:** After loading, use only its change-creation semantics. Do not execute any instruction that invokes the official CLI directly, changes to a fixed cwd, or writes the change under a fixed physical OpenSpec root. Run create, status, and instructions through `comet classic openspec -- <args...>`, and use `<classic-change-dir>` and the other logical roots for every file path.
 
 Full `/comet-classic` workflow must not use the Skill tool to load the `openspec-propose` skill by default; only load it when the user explicitly requests generating the proposal and artifacts in one pass.
 
 <!-- external-openspec-skill-override -->
+
 **External OpenSpec Skill override:** Apply the same rule to `openspec-propose`: ignore direct official CLI, fixed-cwd, and fixed physical OpenSpec path instructions; use the adapter and resolver-returned `<classic-*>` logical roots.
 
 After the skill loads, follow its guidance to create the change skeleton. When Step 1b has produced an unambiguous resolved brief, override its "STOP and wait for user direction" behavior to avoid a duplicate question.
@@ -217,7 +229,7 @@ After preflight, generate the implementation-required artifacts from the OpenSpe
 
 **OpenSpec status-driven artifact loop**:
 
-1. Run `comet classic openspec -- status --change "<name>" --json` and parse the complete JSON.
+1. Use the complete status JSON from the just-completed preflight or the preceding iteration after its write. Run `comet classic openspec -- status --change "<name>" --json` only when no valid result is available. Apply the same-execution read-result reuse rules in `classic-layout.md`.
 2. Exit when every item in `applyRequires` is `done`; record `isComplete` as diagnostic only and do not use it as a phase blocker.
 3. From unfinished `ready` artifacts, prioritize items that advance the `applyRequires` dependency closure and process them in CLI-returned order. Must not hard-code generation order or assume the schema contains only proposal/design/tasks.
 4. Fetch current instructions for each ready `<artifact-id>`:
@@ -250,6 +262,8 @@ Confirm the following artifacts have been created:
 └── tasks.md          # Task checklist (checkboxes)
 ```
 
+**Artifact depth:** Satisfy all required schema instructions. Keep Open design focused on high-level boundaries, key choices, and constraints rather than per-file implementation steps. tasks is the source of task scope and completion state, with clear acceptance boundaries. The later Design Doc adds technical details; the plan references tasks and adds execution and verification steps without copying the full requirements background and design again.
+
 ### 3. Entry State Verification
 
 Verify state machine has been correctly initialized:
@@ -273,7 +287,7 @@ If the required dependency graph cannot advance, list the relevant blocked artif
 
 ### 4. Content Completeness Check
 
-Run status again. Confirm core ids exist, every item in `applyRequires` is `done`, and concrete files in `artifactPaths.<id>.existingOutputPaths` for required artifacts exist and are non-empty. If any condition fails, do not enter Step 5 or execute the phase guard.
+Reuse the still-valid status JSON successfully returned after the last artifact write; if it is missing or invalid, rerun `comet classic openspec -- status --change "<name>" --json`. Confirm core ids exist, every item in `applyRequires` is `done`, and concrete files in `artifactPaths.<id>.existingOutputPaths` for required artifacts exist and are non-empty. If any condition fails, do not enter Step 5 or execute the phase guard.
 
 Then check key artifact content: proposal covers problem, goals, scope, and non-goals; design covers high-level decisions and data flow; tasks contains clear work items. If the schema returns specs or other artifacts, check their content against their instructions as well; the fixed three documents must not hide an incomplete schema artifact.
 
@@ -286,6 +300,7 @@ The final review confirms the change name, scope, and artifact content together.
 The user confirmation question must be presented as a single-select question with the following summary and options:
 
 **Summary content**:
+
 - **Change name and resolved brief**: final name, goal, non-goals, scope boundaries, and key unknowns
 - **proposal.md**: problem background, goals, scope
 - **specs and other schema artifacts**: capabilities, requirements, and key acceptance scenarios
@@ -293,6 +308,7 @@ The user confirmation question must be presented as a single-select question wit
 - **tasks.md**: task count and key task descriptions
 
 **Options**:
+
 - "Confirm, proceed to next phase" — artifacts meet expectations, execute phase guard transition
 - "Needs adjustment" — include adjustment notes, modify and re-request confirmation
 

@@ -1,6 +1,6 @@
 ---
 name: comet-open
-description: "Comet Classic 阶段 1 —— 开启 OpenSpec change 并建立 proposal/design/tasks/.comet.yaml 产物。"
+description: 'Comet Classic 阶段 1 —— 开启 OpenSpec change 并建立 proposal/design/tasks/.comet.yaml 产物。'
 ---
 
 # Comet 阶段 1：开启（Open）
@@ -66,6 +66,7 @@ comet classic openspec -- --version
 
 1. **iam 认证校验**：
    运行身份状态查询：
+
    ```bash
    iam auth status --json
    ```
@@ -74,6 +75,7 @@ comet classic openspec -- --version
 
 2. **dop CLI 可用性检查**：
    运行：
+
    ```bash
    dop change list
    ```
@@ -94,7 +96,7 @@ comet classic openspec -- --version
      ```
      获取该变更的完整需求信息，包括 `summary`（概述）、`description`（描述）、`storyAC`（变更所属用户故事的验收标准）、`subSystems`（关联子系统）以及 `userStory`（用户故事及相关排期）。
      若拉取详情失败（例如网络超时或变更不存在），输出警告并降级允许用户手动提供/确认需求信息，继续流程。
-   - **输入为自然语言**：若用户输入的是业务描述而非 change-id，且 `dop` 可用，运行 `dop change list`（或 `dop change list --json`）列出当前用户的候选需求变更，交互提示用户选择已有变更或直接输入 `change-id`；用户亦可选择跳过，使用纯自然语言作为业务背景。
+   - **输入为自然语言**：若用户输入的是业务描述而非 change-id，且 `dop` 可用，优先复用 Step 0d 同轮成功返回的候选列表；结果不完整或已失效时才运行 `dop change list`（或 `dop change list --json`），列出当前用户的候选需求变更，交互提示用户选择已有变更或直接输入 `change-id`；用户亦可选择跳过，使用纯自然语言作为业务背景。
 2. **需求上下文融入**：
    - 将通过 DOP 获取或用户确认的 `summary`、`description`、`storyAC`、`subSystems` 以及 `userStory`（排期信息）作为事实源，直接融入到需求澄清中，确保目标、非目标、范围边界和验收场景草案与之对齐。
    - 后续生成的 `proposal.md` 中，业务背景和整体验收标准优先引用 DOP 需求内容（结合 `summary`、`description` 与 `storyAC`）。
@@ -103,9 +105,13 @@ comet classic openspec -- --version
 **立即执行：** 使用 Skill 工具加载 `openspec-explore` 技能。禁止跳过此步骤。
 
 <!-- external-openspec-skill-override -->
+
 **外部 OpenSpec Skill 覆写：** 加载后只采用其探索方法；其中任何直接运行官方 CLI、切换到固定 cwd 或读写固定物理 OpenSpec 路径的指令都不得执行。所有 CLI 调用改用 `comet classic openspec -- <args...>`，所有文件路径改用本轮绑定的 `<classic-*>` 逻辑根。
 
-技能加载后，按其指引探索问题空间，但不得把一次问答视为足够澄清。必须围绕下列内容继续提问、对齐并形成澄清摘要：
+**Comet 探索接入规则：** 使用已提供的需求、DOP 信息和仍有效的确认结果，按信息完整度结束澄清，不按问答轮次判断。下列信息充分时直接形成 resolved brief，允许零轮或一轮补充提问；仅对会改变范围、方案或风险的关键缺口集中提问。未确认推断标为待确认，不得写成用户已确认事实。本规则优先于外部探索技能中的重复提问要求。
+
+澄清摘要覆盖：
+
 - 目标：用户真正要解决的问题和期望结果
 - 非目标：本次明确不做的内容
 - 范围边界：涉及/不涉及的模块、用户、平台或数据
@@ -119,6 +125,7 @@ comet classic openspec -- --version
 当用户输入是大型 PRD、路线图、完整产品方案，或澄清摘要显示包含多个独立能力、模块、用户路径或里程碑时，必须在创建 OpenSpec artifacts 前评估是否需要拆分为多个 change。
 
 拆分预检必须基于已澄清的信息，输出候选拆分清单。每个候选拆分项必须包含：
+
 - 建议 change 名称
 - 目标与范围边界
 - 明确非目标
@@ -126,6 +133,7 @@ comet classic openspec -- --version
 - 对应的核心验收场景
 
 满足任一条件时，应推荐拆分：
+
 - PRD 包含多个可独立设计、构建、验证、归档的 capability
 - 涉及多个模块或用户路径，且其中一部分可独立交付
 - 存在明显分阶段里程碑
@@ -135,6 +143,7 @@ comet classic openspec -- --version
 如推荐拆分，必须按 `comet-classic/reference/decision-point.md` 的协议暂停并等待用户选择。
 
 用户选择必须包含：
+
 - 「创建多个 OpenSpec changes」— 按候选拆分逐个创建独立 change
 - 「保持为一个 change」— 继续单 change 流程，并在 proposal/design/tasks 中记录不拆分原因
 - 「调整拆分方案后继续」— 用户说明调整方向后，重新输出候选拆分清单并再次确认
@@ -157,6 +166,7 @@ comet state check <name> design
 ```
 
 解析 OpenSpec JSON 时必须同时确认：
+
 - `changeRoot` 解析后必须等于 resolver 绑定的 `<classic-change-dir>`；不匹配时停止，Classic runtime 不支持仓库外 change root
 - schema 必须包含核心 artifact ID `proposal`、`design`、`tasks`；允许存在额外 artifacts，但核心 ID 缺失时停止并报告不兼容 schema
 - `applyRequires` 列出的每个 artifact 在 `artifacts` 中都必须为 `done`
@@ -187,11 +197,13 @@ resolved brief 或 change 名称仍不明确时不得运行 `comet classic opens
 **立即执行：** 使用 Skill 工具加载 `openspec-new-change` 技能。禁止跳过此步骤。
 
 <!-- external-openspec-skill-override -->
+
 **外部 OpenSpec Skill 覆写：** 加载后只采用其 change 创建语义；其中任何直接运行官方 CLI、切换到固定 cwd 或把 change 写到固定物理 OpenSpec 根的指令都不得执行。创建、status 与 instructions 全部改用 `comet classic openspec -- <args...>`，文件路径全部改用 `<classic-change-dir>` 等本轮逻辑根。
 
 完整 `/comet-classic` 流程默认不得使用 Skill 工具加载 `openspec-propose` 技能；只有用户明确要求一次性生成提案和 artifacts 时才允许加载。
 
 <!-- external-openspec-skill-override -->
+
 **外部 OpenSpec Skill 覆写：** 对 `openspec-propose` 同样不得采用其直接官方 CLI、固定 cwd 或固定物理 OpenSpec 路径；命令必须通过 adapter，产物必须写入 resolver 返回的 `<classic-*>` 逻辑根。
 
 技能加载后，按其指引创建 change 骨架；当 Step 1b 已形成范围明确的 resolved brief 时，覆盖其"STOP and wait for user direction"行为，避免重复询问。
@@ -217,7 +229,7 @@ comet state check <name> open
 
 **OpenSpec 状态驱动产物循环**：
 
-1. 运行 `comet classic openspec -- status --change "<name>" --json` 并解析完整 JSON。
+1. 使用刚完成预检或上一轮写入后返回的完整 status JSON；仅在缺少有效结果时运行 `comet classic openspec -- status --change "<name>" --json`。复用条件按 `classic-layout.md` 的同轮只读结果协议判断。
 2. 若 `applyRequires` 中每一项都已是 `done`，退出循环；`isComplete` 只记录为诊断信息，不作为阶段阻塞条件。
 3. 从尚未完成且为 `status: "ready"` 的 artifacts 中，优先选择能够推进 `applyRequires` 依赖闭包的项，并按 CLI 返回顺序处理。不得硬编码生成顺序，也不得假设 schema 只有 proposal/design/tasks。
 4. 对每个 ready 的 `<artifact-id>` 获取实时指令：
@@ -250,6 +262,8 @@ comet state check <name> open
 └── tasks.md          # 任务清单（勾选框）
 ```
 
+**产物深度：** 满足 schema instructions 的必需内容；Open design 聚焦高层边界、关键选型和约束，不提前展开逐文件实现步骤。tasks 是任务范围与完成状态的来源，保留明确验收边界。后续 Design Doc 补充技术细节，plan 引用 tasks 补充执行与验证步骤，不再全文复制需求背景和设计。
+
 ### 3. 入口状态验证
 
 验证状态机已正确初始化：
@@ -273,7 +287,7 @@ comet state check <name> open
 
 ### 4. 内容完整性检查
 
-再次运行 `comet classic openspec -- status --change "<name>" --json`，确认核心 ID 存在、`applyRequires` 每项均为 `done`，且这些必需 artifacts 的 `artifactPaths.<id>.existingOutputPaths` 返回的实际输出文件存在且非空。任一条件不满足时，不得进入 Step 5 或执行阶段守卫。
+复用最后一次 artifact 写入后成功返回且仍有效的 status JSON；缺失或失效时重新运行 `comet classic openspec -- status --change "<name>" --json`。确认核心 ID 存在、`applyRequires` 每项均为 `done`，且这些必需 artifacts 的 `artifactPaths.<id>.existingOutputPaths` 返回的实际输出文件存在且非空。任一条件不满足时，不得进入 Step 5 或执行阶段守卫。
 
 随后检查关键 artifact 内容：proposal 覆盖问题、目标、范围和非目标；design 覆盖高层决策与数据流；tasks 包含明确任务；schema 返回 specs 等其他 artifact 时，也必须按其 instructions 检查内容，不能因固定三件套存在而跳过。
 
@@ -286,6 +300,7 @@ comet state check <name> open
 用户确认问题必须以单选题形式呈现，包含以下摘要和选项：
 
 **摘要内容**：
+
 - **change 名称与 resolved brief**：最终名称、目标、非目标、范围边界和关键未知项
 - **proposal.md**：问题背景、目标、范围
 - **specs 等 schema artifacts**：能力、需求和关键验收场景
@@ -293,6 +308,7 @@ comet state check <name> open
 - **tasks.md**：任务数量和关键任务描述
 
 **选项**：
+
 - 「确认，继续下一阶段」— 产物符合预期，执行阶段守卫流转
 - 「需要调整」— 附带调整说明，修改后重新请求确认
 

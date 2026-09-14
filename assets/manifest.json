@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "skills": [
     "comet/SKILL.md",
     "comet/agents/openai.yaml",
@@ -89,10 +89,7 @@
     "comet/runtime/classic/guardrails.yaml",
     "comet/runtime/classic/checks.yaml"
   ],
-  "rules": [
-    "comet/rules/comet-workflow-guard.md",
-    "comet/rules/comet-workflow-guard.en.md"
-  ],
+  "rules": ["comet/rules/comet-workflow-guard.md", "comet/rules/comet-workflow-guard.en.md"],
   "hooks": {
     "comet/scripts/comet-hook-router.mjs": {
       "matcher": "Write|Edit",

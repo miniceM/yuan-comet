@@ -8,6 +8,15 @@ comet classic root show
 
 Accept only `schema: comet.classic-layout.v1`. Bind the returned `openSpecRoot`, `changesRoot`, `archiveRoot`, `specsRoot`, and `superpowersRoot` as `<classic-open-spec-root>`, `<classic-changes-root>`, `<classic-archive-root>`, `<classic-specs-root>`, and `<classic-superpowers-root>`, respectively, then define `<classic-change-dir>` as `<classic-changes-root>/<name>`. These logical roots are the source of truth for this turn. Resolve them again after recovery or context compaction.
 
+## Reuse Read Results Within the Same Execution
+
+During one continuous execution, reuse successful, complete, still-valid status responses, configuration reads, and DOP candidate lists. Retain the associated project root, change, configuration, and identity context; reuse existing results without introducing a persistent cache.
+
+- status: reread after artifact, schema, or relevant configuration writes. Use the post-write result for the next iteration; completeness checks may reuse it but must still validate core IDs, applyRequires, paths, and non-empty actual outputs
+- Configuration and DOP: reread after relevant configuration, identity, or candidate changes. Revalidate when external changes are known, may have occurred while waiting for the user, or validity is uncertain
+- Reread after workspace changes, session recovery, or context compaction; do not infer freshness from a summary. Failed or incomplete results cannot be reused
+- Preserve each phase's root resolution, entry checks, recovery checks, and guard. Reuse only removes unchanged duplicate reads and never replaces safety checks
+
 ## Command rules
 
 - This and every other Comet-owned Classic Skill must call the official OpenSpec CLI directly through:
