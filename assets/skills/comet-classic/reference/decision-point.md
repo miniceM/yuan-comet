@@ -15,6 +15,10 @@ Distinguish user decisions, automatic handling, and stop conditions:
 
 Only the first category uses this protocol. Merge adjacent choices that can be answered together, and do not re-ask persisted choices that remain valid. Do not preflight, infer, or filter an option based on whether a later tool or operation may succeed. Present every workflow-supported choice; after the user selects one, run the requested action and stop with its original error if it fails. If a field has only one workflow-valid value, explain why and apply it without creating a separate pause.
 
+## Open / Design / Build Confirmation Boundaries
+
+Preserve Open artifact review, Design proposal confirmation, and Build execution configuration as three confirmation points for different deliverables. Initial clarification collects only critical gaps. Details such as packaging formats that do not block the proposal and can be decided together belong in the relevant confirmation, not separate advance questions. Echo confirmed choices that remain valid in the summary; when new evidence or scope/risk changes arise, explain their impact and reconfirm only affected choices. Recommendations and pending assumptions are not authorization; resuming after a pause still requires explicit intent to continue.
+
 ## Core Rules
 
 - Decision points are blocking points. Pause and wait for an explicit user choice before continuing

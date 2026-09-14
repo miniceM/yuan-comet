@@ -10,6 +10,7 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ### Changed
 
+- **Classic planning efficiency**: Stop clarification when requirements are sufficient, reuse settled design decisions and valid implementation plans, and avoid unchanged duplicate reads while preserving phase confirmations, recovery checks, and the original implementation baseline.
 - **Enterprise onboarding**: Initialization now defaults to the Classic workflow, marks Native as not recommended for the current enterprise model environment, and guides Classic users through the five mapped `/sdd-*` stages with an enterprise change ID for `/sdd-open`.
 
 ### Fixed

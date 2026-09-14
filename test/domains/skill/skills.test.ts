@@ -2424,9 +2424,8 @@ describe('skills', () => {
       expect(zhDesign).toContain(
         '必须按 `comet-classic/reference/decision-point.md` 的协议暂停并等待用户明确确认设计方案',
       );
-      expect(zhDesign).toContain(
-        '不得用“跳过重复上下文探索”削弱 Superpowers `brainstorming` 的澄清流程',
-      );
+      expect(zhDesign).toContain('复用前者，只探索后者');
+      expect(zhDesign).not.toContain('不得只进行一轮问答就创建 Design Doc');
       expect(zhDesign).not.toContain('跳过重复上下文探索，直接进入设计提问');
       expect(zhOpen).toContain('comet-classic/reference/workspace.md');
       expect(zhOpen).toContain('推荐只作说明');
@@ -2812,9 +2811,8 @@ describe('skills', () => {
       expect(enDesign).toContain(
         'must follow the `comet-classic/reference/decision-point.md` protocol to pause and wait for the user to explicitly confirm',
       );
-      expect(enDesign).toContain(
-        'must not weaken the Superpowers `brainstorming` clarification flow by "skipping redundant context exploration"',
-      );
+      expect(enDesign).toContain('Reuse the former and explore only the latter');
+      expect(enDesign).not.toContain('must not create the Design Doc after only one Q&A turn');
       expect(enDesign).not.toContain('Skip redundant context exploration');
       expect(enBuild).toContain(
         'After the plan is written, provide exactly **one joint decision point**',

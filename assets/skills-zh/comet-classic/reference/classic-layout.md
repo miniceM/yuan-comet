@@ -8,6 +8,15 @@ comet classic root show
 
 只接受 `schema: comet.classic-layout.v1`。把返回的 `openSpecRoot`、`changesRoot`、`archiveRoot`、`specsRoot`、`superpowersRoot` 分别绑定为 `<classic-open-spec-root>`、`<classic-changes-root>`、`<classic-archive-root>`、`<classic-specs-root>`、`<classic-superpowers-root>`，并把 `<classic-change-dir>` 定义为 `<classic-changes-root>/<name>`。这些逻辑根是本轮事实源；恢复或上下文压缩后必须重新解析。
 
+## 同轮只读结果复用
+
+同一连续执行中，可复用成功、完整且仍有效的 status、配置读取和 DOP 候选列表。保留结果所对应的项目根、change、配置和身份上下文；只复用已有结果，不额外建立持久缓存。
+
+- status：artifact、schema 或相关配置写入后必须重新读取；循环使用写入后的新结果，完整性检查可以复用它，但仍需校验核心 ID、applyRequires、路径和实际输出非空
+- 配置与 DOP：相关配置写入、身份或候选需求变化后重新读取；已知发生外部变化、等待用户期间可能变化或无法确认有效性时重新验证
+- 工作区切换、会话恢复或上下文压缩后重新读取，不从摘要推定结果仍新鲜；失败或不完整输出不能复用
+- 每个阶段的 root 解析、入口检查、恢复检查和 guard 仍按协议执行；复用只减少无变化的重复读取，不替代安全检查
+
 ## 命令规则
 
 - 本 Skill 及其他 Comet-owned Classic Skill 调用官方 OpenSpec CLI 时，必须直接使用：
