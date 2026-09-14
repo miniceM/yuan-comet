@@ -155,6 +155,16 @@ domains/github-delivery/
 
 不得把该状态嵌入 Classic 或 Native 主状态机。
 
+### 5.2.1 存储、提交与恢复边界
+
+- 需求/spec 和不含运行结果的 Acceptance Manifest 快照可以随 change 提交、归档。
+- 可变交付记录、授权、不可变历史验证快照、Review Receipt、验证覆盖证明及 Remote Operation Journal 存放在 `<git-common-dir>/comet/github-delivery/<delivery-id>/`，不进入 Git 跟踪。通过 Git common directory 定位，使同一仓库的 linked worktree 共享记录，不依赖当前 change 所在目录。
+- `delivery-id` 在首次准备操作前生成并持久化；归档移动和 worktree 清理不删除记录。支持按 delivery-id 或 repository/workflow/change 查询并恢复；恢复入口不要求 active change 仍存在。
+- 每条记录采用版本校验、同目录临时文件原子替换和按 delivery-id 的排他锁；同一仓库创建 binding 时也需串行检查，避免并发生成重复关联。先落盘 prepared 操作及其目标、正文 hash，再执行远端写入。
+- 最终 HEAD、review 和远端状态的更新不得触发新的源码提交，避免“记录 HEAD → 新提交 → HEAD 失效”的循环。
+- 此本地记录随整个 clone 删除而丢失，不承诺跨 clone 自动继承。异机恢复通过远端稳定标识找回 issue/PR；无法恢复的授权和本地验证/review 证据必须重新取得，不从远端正文推断为通过。
+- GitHub 关闭/合并状态通过显式恢复或观察操作刷新，记录观察时间；本地快照不是远端当前状态的保证。
+
 ### 5.3 `acceptance-manifest.ts`
 
 负责：
@@ -192,7 +202,7 @@ domains/github-delivery/
 
 在 push / PR 前执行统一检查：
 
-- active AC 是否全部通过；
+- 本次已确认 AC 是否全部通过，验证上下文和代码覆盖是否有效；
 - Review 是否存在；
 - Review 是否仍然覆盖当前 HEAD；
 - repository/base/head 是否正确；
@@ -276,21 +286,25 @@ interface GithubDeliveryRecord {
 
   acceptance: {
     revision: number;
-    manifestHash: string;
-    items: AcceptanceItem[];
+    manifestHash: string; // 包含 issue 总范围和本次已确认范围
+    items: AcceptanceItem[]; // issue 的全部已知 AC
+    issueScopeRevision: string;
+    committedKeys: string[]; // 本次 change 承诺完成的 active AC
+    scopeConfirmationRef: string;
   };
 
   verification: {
     headSha: string | null;
     manifestHash: string | null;
+    verificationHash: string | null;
     items: AcceptanceVerification[];
+    coverage: VerificationCoverage[]; // 验证后纯归档差异的适用性证明
   };
 
   review: {
     status: 'missing' | 'passed' | 'blocked' | 'stale';
-    reviewedHeadSha: string | null;
-    acceptanceHash: string | null;
-    evidenceRef: string | null;
+    receipts: ReviewReceipt[];
+    finalReceiptId: string | null; // 完整审查或连续 delta 链的末端
   };
 
   authorization: AuthorizationGrant[];
@@ -323,8 +337,8 @@ Native 当前 acceptance ID 是内容 hash 类型的内部标识。该方式适�
 
 ```ts
 interface AcceptanceItem {
-  key: string;               // AC-01
-  internalRef: string;       // Native acceptance hash / Classic locator
+  key: string; // AC-01
+  internalRef: string; // Native acceptance hash / Classic locator
 
   source: {
     artifact: string;
@@ -391,6 +405,7 @@ Comet 不应覆盖用户在 Issue 中手工维护的全部内容。
 ## Acceptance Criteria
 
 <!-- comet:acceptance:start delivery=abc123 revision=3 -->
+
 - [ ] AC-01 ...
 - [ ] AC-02 ...
 - [ ] AC-03 ...
@@ -448,6 +463,7 @@ build Acceptance Manifest
 ```ts
 interface AcceptanceVerification {
   key: string;
+  acceptanceRevision: number;
   status: 'passed' | 'failed' | 'not-run';
   evidenceRefs: string[];
   reason?: string;
@@ -476,7 +492,8 @@ interface AcceptanceVerification {
 正式 PR 的默认要求：
 
 ```text
-所有 active AC == passed
+所有 committedKeys 对应的 active AC == passed
+且 verification 对当前 Manifest 和最终代码仍有效
 ```
 
 Issue #51 本次正式范围不得通过“从 PR 中暂时省略失败 AC”的方式绕过。
@@ -487,6 +504,35 @@ Issue #51 本次正式范围不得通过“从 PR 中暂时省略失败 AC”的
 - PR 使用 `Related to #N`；
 - 不使用 `Closes #N`；
 - 交付记录 resolution = partial。
+
+### 10.4 Issue 总范围与本次交付范围
+
+`acceptance.items` 保存绑定 issue 的全部已知验收项，`committedKeys` 保存需求确认时承诺由本次 change 完成的子集，并保存确认依据与 issue 范围版本。二者共同参与 manifestHash。已有 issue 的范围不能由当前 change 的子集覆盖。
+
+- 正式 PR 要求 committedKeys 非空、全部指向有效 active AC，且每项都有唯一的当前版本通过结果。
+- 本次范围之外的 issue AC 在 PR 中标为“不属于本次交付”，不能标记 PASS；issue 保持未完成状态。
+- 只有 committedKeys 覆盖 issue 全部 active AC 且均有效通过，才能选择 full 和 `Closes`；本期对多个部分 PR 的累计完成不自动推断 full。
+- 创建 PR 前重新核对 issue 范围；远端范围有变化或无法确认时阻止 full 判定，先完成冲突核对和范围确认。
+- 缩减 committedKeys、retire AC 或改变验收语义必须保留变更依据和明确确认，禁止为绕过失败而自动缩小范围。
+
+### 10.5 验证有效性与代码覆盖
+
+Preflight 独立验证 `verification.manifestHash == acceptance.manifestHash`，并核对每项 acceptanceRevision、结果唯一性和证据引用。验收文案/目标、生命周期或承诺范围变化时，原验证快照失效；受影响项变为 not-run。未受影响项仅在显式确认适用性后迁入新快照，不能只重新签发 Review Receipt。
+
+验证代码版本必须等于最终 HEAD，或由以下证明连续覆盖到最终 HEAD：
+
+```ts
+interface VerificationCoverage {
+  fromHeadSha: string;
+  toHeadSha: string;
+  manifestHash: string;
+  diffHash: string;
+  reason: string;
+  evidenceRef: string;
+}
+```
+
+覆盖证明只适用于已检查且不改变产品行为、验收语义或测试结果的归档差异。实现、Skill、配置、生成 runtime 或有语义变化的 spec 修改须重新执行受影响验证，并明确其余证据继续适用的依据。未知差异按需要重新验证处理。新快照或覆盖证明改变 verificationHash，之后再签发对应 Review Receipt；review 本身不能替代验证。
 
 ## 11. Review Receipt
 
@@ -500,6 +546,10 @@ Review 必须绑定具体代码版本和验收上下文：
 
 ```ts
 interface ReviewReceipt {
+  id: string;
+  kind: 'full' | 'delta';
+  parentReceiptId: string | null;
+  diffHash: string;
   baseSha: string;
   headSha: string;
 
@@ -518,12 +568,18 @@ interface ReviewReceipt {
 Delivery Preflight 必须检查：
 
 ```text
-receipt.headSha == current delivery HEAD
-receipt.acceptanceHash == current manifest hash
-receipt.verificationHash == current verification hash
+finalReceipt.headSha == current delivery HEAD
+finalReceipt.acceptanceHash == current manifest hash
+finalReceipt.verificationHash == current verification hash
+verification context and final code coverage are valid
+review coverage chain is continuous and all receipts passed
 ```
 
-任意一个不一致，Review 变为 `stale`。
+任意一个不一致，Review 变为 `stale`，阻止正式 PR。
+
+完整回执必须以已确认的审查基线为起点，`parentReceiptId = null`；delta 回执通过 parentReceiptId 引用不可变父回执，其 baseSha 必须等于父回执 headSha，且父提交必须是子提交的祖先。每段 diffHash 均从实际 Git 差异重算，不能只比较字符串或把旧回执的 HEAD 改为新 HEAD。
+
+父回执保留原验证快照与证据，不要求其 verificationHash 等于最终快照；必须能读取对应历史快照，并证明其有效性通过第 10.5 节延续到最终版本。Manifest 变化则重新做完整审查。末端回执绑定最终验证快照，汇总整条链未解决的问题，不允许仅凭最后一段无问题就覆盖父段阻塞项。
 
 ## 12. Classic `review_mode: off`
 
@@ -590,10 +646,11 @@ reviewedHead..finalArchiveHead
 - archive metadata；
 - spec 状态；
 - verification report；
-- delivery metadata；
 - 文档归档调整；
 
-允许做轻量 delta review。
+仅在内容检查确认没有产品行为、验收语义或验证结果变化后，允许做轻量 delta review；文件路径或扩展名不能单独决定。先记录第 10.5 节的验证覆盖证明，再追加引用原实现回执的 delta 回执，使末端 headSha 等于 finalArchiveHead。原完整回执不得被覆盖或丢弃。
+
+可变 delivery metadata 位于 Git common directory，不应出现在归档提交中。归档前后若出现其他未知差异，必须明确分类并补充验证/审查，不能默认归入轻量路径。
 
 如果差异包含实现代码路径，例如：
 
@@ -768,11 +825,11 @@ PR
 
 ## Acceptance
 
-| AC | Result | Evidence |
-| --- | --- | --- |
-| AC-01 | PASS | ... |
-| AC-02 | PASS | ... |
-| AC-03 | PASS | ... |
+| AC    | Result | Evidence |
+| ----- | ------ | -------- |
+| AC-01 | PASS   | ...      |
+| AC-02 | PASS   | ...      |
+| AC-03 | PASS   | ...      |
 
 ## Review
 
@@ -801,7 +858,7 @@ Closes #51
 
 ### 17.1 Issue 关联规则
 
-完整解决且全部 AC 通过：
+本次范围覆盖 issue 全部 active AC，且当前版本全部有效通过：
 
 ```text
 Closes #51
@@ -862,11 +919,7 @@ Issue 继续保持 open。
 interface RemoteOperation {
   operationId: string;
 
-  kind:
-    | 'issue-create'
-    | 'issue-update'
-    | 'push'
-    | 'pr-create';
+  kind: 'issue-create' | 'issue-update' | 'push' | 'pr-create';
 
   repository: string;
 
@@ -874,11 +927,7 @@ interface RemoteOperation {
   head?: string;
   headSha?: string;
 
-  status:
-    | 'prepared'
-    | 'completed'
-    | 'uncertain'
-    | 'failed';
+  status: 'prepared' | 'completed' | 'uncertain' | 'failed';
 
   remoteRef?: string;
 }
@@ -890,12 +939,12 @@ interface RemoteOperation {
 
 不能直接再次执行 `gh pr create`。
 
-必须：
+操作日志已有 PR 编号时，优先按编号查询，不受当前 PR 状态或分支重命名影响。没有编号时先按绑定分支查询所有状态并完整处理分页；该过滤查询没有候选时，还必须扩大到仓库全部 PR 按稳定操作标识核对，避免 base/head 被修改后漏检：
 
 ```text
 gh pr list
   --repo owner/repo
-  --state open
+  --state all
   --base <base>
   --head <head>
 ```
@@ -910,10 +959,12 @@ gh pr view
 
 校验：
 
-- base；
-- head；
-- head SHA；
-- repository。
+- repository 和 head repository 身份；
+- base/head 与 prepared 操作目标；
+- PR body 中的 delivery-id 和 operation-id（创建前写入）；
+- 原提交与当前 head SHA，以及 open/merged/closed 状态。
+
+分支或 SHA 变化时先保留候选，核对稳定操作标识，不把它视为“不存在”。候选歧义保持 uncertain，不创建新 PR。找到本次 PR 后，不论 open、merged 还是 closed-unmerged，创建操作均已发生；保存编号与实际状态。closed-unmerged 不自动重建，merged 不重复交付；open PR 的当前 HEAD 与待交付 HEAD 不符时报告漂移，不能宣告当前版本已交付。
 
 确认是本次 PR：
 
@@ -921,11 +972,7 @@ gh pr view
 operation = completed
 ```
 
-远端确认不存在：
-
-```text
-允许重试 create
-```
+查询失败、分页不完整、仅搜索无结果或远端尚未可见，都不构成“不存在”的证明。记录 uncertain 并继续只读核对；不能自动再次创建。只有确认先前写操作未发生且没有匹配对象时，才允许在原授权和同一 operation-id 下重试。PR 创建与查询之间没有服务端幂等键保证，无法判定的情况应明确保留待处理状态。
 
 ### 20.2 Issue 创建 timeout
 
@@ -935,7 +982,7 @@ Issue body 内保存：
 delivery-id: <stable id>
 ```
 
-发生不确定结果时，先搜索/查询是否存在相同 delivery-id 的 Issue，再决定是否重试。
+Issue 同时保存 operation-id。发生不确定结果时，查询全部状态、处理分页并核对正文中的稳定标识；搜索仅用于发现候选，搜索未命中不能证明未创建。存在匹配对象则绑定并保存其实际状态，多个匹配对象或无法确认结果则保留 uncertain。采用与 PR 相同的重试判定，不因单次空结果重复创建。
 
 ### 20.3 push 成功、PR 创建失败
 
@@ -1101,11 +1148,7 @@ remote verification
 
 ```ts
 interface AuthorizationGrant {
-  action:
-    | 'issue:create'
-    | 'issue:update'
-    | 'push'
-    | 'pull-request:create';
+  action: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create';
 
   repository: string;
   issueNumber?: number;
@@ -1135,11 +1178,13 @@ interface AuthorizationGrant {
 2. repository matches
 3. target branch matches
 4. head branch matches
-5. active AC all passed
+5. committed AC nonempty, unique, current and all passed
+5a. verification manifest/revisions match and final code coverage is valid
+5b. issue total scope and confirmed delivery scope reconciled
 6. no unresolved Critical findings
 7. no unresolved Important findings
 8. Review Receipt exists
-9. Review Receipt is fresh
+9. final Review Receipt is fresh and coverage chain is valid
 10. final archive delta covered
 11. push authorization exists
 12. PR create authorization exists
@@ -1240,7 +1285,13 @@ test/domains/github-delivery/
 - full/partial Issue link；
 - timeout reconciliation；
 - wrong base/head；
-- duplicate prevention。
+- duplicate prevention；
+- AC 修改后旧 PASS 失效，重新 review 不能恢复旧验证；
+- committedKeys 与 issue 总范围分离，未授权缩减范围被拒绝；
+- full/delta 回执链断裂、父段阻塞、过期验证和未知归档差异被拒绝；
+- common-dir 存储跨 worktree 恢复、原子写入、并发 binding 与操作串行；
+- 归档清理不删除交付日志，更新回执不改变 Git HEAD；
+- PR 响应丢失后已 merged/closed、候选漂移、查询失败/分页不完整均不重复创建。
 
 ### 29.2 Classic Contract Tests
 
@@ -1713,4 +1764,3 @@ Issue #51 只有在以下条件满足时才可以认为实现完成：
 - 单元与契约测试通过；
 - 完整构建/架构验证通过；
 - 在隔离测试仓库执行真实 `gh` 验收，并如实记录未执行项。
-
