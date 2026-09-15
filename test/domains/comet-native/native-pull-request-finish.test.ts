@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const external = vi.hoisted(() => ({ runExternalCommand: vi.fn() }));
 vi.mock('../../../platform/process/external-command.js', () => external);
+vi.mock('../../../domains/github-delivery/workflow-adapter.js', () => ({
+  finishWorkflowDelivery: () => null,
+}));
 
 import {
   finishNativePullRequest,

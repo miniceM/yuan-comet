@@ -5,6 +5,10 @@ description: "Phase 4 of Comet Classic — verify a change, record evidence, and
 
 # Comet Phase 4: Verify
 
+## GitHub delivery integration
+
+For a GitHub-bound change, follow `comet-classic/reference/github-delivery.md` to record per-AC evidence and independent review. review_mode: off does not waive formal PR review; never mark unexecuted checks passed.
+
 Before starting or recovering, read and follow `comet-classic/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
 
 ## Prerequisites

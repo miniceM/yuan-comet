@@ -5,6 +5,10 @@ description: "Comet preset — fix an existing behavior bug through a short open
 
 # Comet Preset Path: Hotfix
 
+## GitHub delivery integration
+
+When the user requests GitHub delivery, use `comet-classic/reference/github-delivery.md`: bind an issue after requirements are clear, record per-AC verification, and complete independent review before a formal PR even when hotfix defaults to review_mode: off.
+
 Before starting or recovering, read and follow `comet-classic/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
 
 Quick bug fix workflow: open → build → root cause check → verify → archive. Skip brainstorming and full plan, applicable for behavior fixes not involving new capability design.

@@ -1,0 +1,51 @@
+# GitHub 交付实现与验收记录
+
+对应 [Issue #51](https://github.com/miniceM/yuan-comet/issues/51)。设计依据为 `docs/superpowers/specs/2026-09-14-github-delivery-gh-cli-design.md`。
+
+## 实现范围
+
+新增 `domains/github-delivery/` 与 `comet delivery` 命令，集中管理 issue 绑定、稳定验收编号、验证证据、审查记录、授权及远端操作恢复。Classic 使用 Skill 协议和归档后的交付提示接入；Native 已绑定的 PR 收尾通过共享模块检查。未绑定交付的流程保留原有行为。
+
+交付记录位于 Git common directory 的 `comet/github-delivery/`，由同一 clone 的 linked worktree 共享；不写入 workflow 的阶段状态，也不因归档删除。记录通过独立字段区分 PR 创建、合并、未合并关闭及 issue 关闭。
+
+中文协议已确认并同步英文，发布清单包含两套参考文档。当前版本为 0.4.1，`origin/master` 为 0.4.0，本次追加到已有 0.4.1 Changelog，不再次升级版本。
+
+## 验收证据范围
+
+下表的“本地覆盖”指源码、临时 Git 仓库测试及契约测试证据，不等同于真实 GitHub 写入验收，也不等同于真实模型完整执行 Skill。
+
+| 标准      | 本地覆盖           | 主要证据                                                                                          |
+| --------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| AC-01～03 | 已实现并覆盖       | Classic/Native 绑定、已有 issue 正文确认、稳定 AC 编号、范围修订与源文件漂移测试；双语言阶段协议  |
+| AC-04～06 | 已实现并覆盖       | 逐项结果、失败/未执行阻塞、独立执行标识检查、过期 HEAD、完整/增量审查链、归档差异验证继承测试     |
+| AC-07～09 | 已实现并覆盖       | PR 正文、full/partial 关系、显式仓库与分支、远端 SHA、已关闭/合并 PR 恢复、issue 关闭独立观测测试 |
+| AC-10～12 | 已实现并覆盖       | 分动作授权、预写操作日志、丢失响应恢复、防重复创建、gh 错误分类与正文文件传递测试                 |
+| AC-13     | 已实现并覆盖       | 独立领域模块、Classic/Native 最小接线、架构检查、双语言参考文档与发布清单                         |
+| AC-14     | 待完成真实远端验收 | 本地验证结果见下；仍缺少明确授权的隔离 GitHub 测试仓库                                            |
+
+## 验证结果
+
+- `pnpm exec vitest run`：394 个测试文件通过、1 个跳过；4808 项通过、35 项跳过，耗时 420.78 秒。跳过项未算作通过。
+- `pnpm exec vitest run test/domains/github-delivery`：38 项通过，包含本次源码审查补充的恢复与目标漂移回归。
+- 相关集成/Skill/结构契约测试：9 个文件、213 项通过。
+- `pnpm build`、`pnpm exec tsc --noEmit`、`pnpm lint`：通过。Lint 包含架构与 Enterprise Guard 检查。
+- 受影响源码、新参考文档、发布清单与 Changelog 的 Prettier 检查、`git diff --check`：通过。既有 8 个 Skill 文件的整文件排版在基线中已不符合 Prettier，本次保留原有密集排版；Open/Design 双语言文件检查通过。
+- `node bin/comet.js delivery --help`：通过，编译后 CLI 可列出交付命令。
+- `npm pack --ignore-scripts --dry-run --json`：通过，清单包含新 CLI/domain 及双语言参考文档；这只是打包清单检查，不是安装后的端到端测试。
+- `pnpm check:generated`：通过；最终 Runtime/Skill/domain 复验 5 个文件、65 项通过。
+
+首次全量检查曾发现发布清单、Native 内容预算/隔离约束与架构测试 fixture 等集成问题。修正后执行上述全量检查，最终无失败。
+
+## 审查与边界
+
+本次进行了单独的源码审查步骤，核对持久化、授权、远端恢复、验收证据与 Native 适配的边界。修正了 issue 正文漂移、远端分支漂移、PR 目标变更、写入错误诊断等问题，并补充回归覆盖。未执行另一独立 Agent 的代码 review，不能把本次自查冒充独立 reviewer 的审查凭据。
+
+当前 provider 支持 github.com 同仓库分支，支持 HTTPS/SSH remote；不支持跨 fork PR 或 GitHub Enterprise hostname。绑定的 base 分支需要已存在于本地。验证与审查命令保存执行方提供的证据，不自行运行测试或判断审查是否真实发生。
+
+操作结果不确定时保留日志并阻止盲目重复创建；查询无结果不会自动解除阻塞。整个 clone 丢失后，本地证据与授权不能自动继承。既有 Native 自定义 provider 在绑定新交付协议后必须使用扩展输入中的正文，最终由 gh 查询验证。
+
+## 尚未执行
+
+- 真实隔离 GitHub 验收：缺少测试仓库 `owner/repo` 及创建 issue、测试分支与 PR 的明确授权。没有用 mock 结果替代此项。
+- 真实模型完整阶段执行及平台 Hook 端到端验收：本轮未运行；本地契约和 Runtime 检查不代表这两层已通过。
+- 本次功能 PR、合并与发布：尚未执行；Issue #51 保持打开，验收未全部完成前不能宣告完整交付。

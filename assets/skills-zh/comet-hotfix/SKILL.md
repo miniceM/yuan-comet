@@ -5,6 +5,10 @@ description: "Comet 预设 —— 通过 open-build-verify-archive 短流程修�
 
 # Comet 预设路径：Hotfix
 
+## GitHub 交付接入
+
+用户要求 GitHub 交付时，复用 `comet-classic/reference/github-delivery.md`：需求明确后绑定 issue，Verify 记录逐项证据，正式 PR 前补齐独立 review，即使 hotfix 默认 review_mode: off。
+
 开始或恢复前必须先读取并执行 `comet-classic/reference/classic-layout.md`；本文件中的 OpenSpec CLI 调用必须使用 adapter，文件路径必须使用该协议绑定的 `<classic-*>` 逻辑根。
 
 快速 bug fix 工作流：open → build → 根因消除检查 → verify → archive。跳过 brainstorming 和完整 plan，适用于行为修复、不涉及新 capability 设计的场景。

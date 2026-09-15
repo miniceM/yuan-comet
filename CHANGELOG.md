@@ -6,6 +6,8 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 ### Added
 
+- **GitHub delivery**: Add opt-in issue and pull request delivery for Classic and Native workflows, with stable acceptance criteria, evidence tied to reviewed commits, scoped authorization, and recovery that keeps local archive, PR merge, and issue closure distinct.
+
 - **Background automatic update**: Automatically check npm registry for new versions in a detached background worker after successful `workflow resolve` execution, and synchronously refresh platform skills, rules, and hooks across global installations and registered projects when upgraded, with zero blocking overhead on interactive sessions.
 
 ### Changed
