@@ -7,7 +7,9 @@ import type { DeliveryRecord } from './types.js';
 import { hash, list, object, requireCondition, text } from './validation.js';
 export function sourceText(root: string, ref: string): string {
   requireCondition(!path.isAbsolute(ref), 'Acceptance source must be project-relative');
-  const file = realpathSync(path.resolve(root, ref));
+  const target = path.resolve(root, ref);
+  requireCondition(existsSync(target), `Acceptance source not found: ${ref}`);
+  const file = realpathSync(target);
   const relative = path.relative(realpathSync(root), file);
   requireCondition(
     relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative),

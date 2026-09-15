@@ -530,6 +530,37 @@ describe('GitHub delivery contracts', () => {
     command('commit', '-qm', 'scope drift');
     expect(() => verify(r)).toThrow('Acceptance source changed');
   });
+  it('reports a missing acceptance source instead of leaking a raw path error', () => {
+    const r = bind();
+    expect(() =>
+      service.local(r.id, 'scope', {
+        confirmation: 'user:missing',
+        items: [{ source: 'docs/missing.md', internalRef: 'scenario-3', text: 'Third acceptance' }],
+      }),
+    ).toThrow('Acceptance source not found: docs/missing.md');
+    expect(() =>
+      service.bind({
+        repository: 'acme/test',
+        workflow: 'classic',
+        change: 'other',
+        base: 'main',
+        head: 'codex/delivery',
+        remote: 'origin',
+        summary: {
+          title: 'Delivery',
+          background: 'Problem',
+          changes: 'Change',
+          impact: 'Impact',
+          nonGoals: 'No merge',
+          compatibility: 'No migration',
+        },
+        scope: {
+          confirmation: 'user:missing',
+          items: [{ source: 'docs/absent.md', internalRef: 'scenario-1', text: 'Gone' }],
+        },
+      }),
+    ).toThrow('Acceptance source not found: docs/absent.md');
+  });
   it('rejects a broken or blocking parent review even with a clean final delta', () => {
     let r = ready();
     review(r, { findings: [{ severity: 'important', resolved: false, text: 'original bug' }] });
