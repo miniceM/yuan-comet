@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runGitCommand, gitWorktreeIsClean } from '../../platform/process/git.js';
-import type { DeliveryRecord, Verification, Review, Evidence } from './types.js';
+import type { DeliveryRecord, Verification, Review, Evidence, ReviewFinding } from './types.js';
 import { hash, object, text, list, requireCondition } from './validation.js';
 import { assertSources } from './acceptance-manifest.js';
 export function head(root: string): string {
@@ -125,17 +125,46 @@ export function recordReview(root: string, record: DeliveryRecord, value: unknow
     verification.head === current,
     'Record current verification before review; use archive verification carry only for inspected nonbehavioral deltas',
   );
-  const findings = list(input.findings, 'Review findings').map(
-    (raw): Review['findings'][number] => {
-      const f = object(raw);
-      requireCondition(
-        f.severity === 'critical' || f.severity === 'important' || f.severity === 'suggestion',
-        'Invalid finding severity',
-      );
-      requireCondition(typeof f.resolved === 'boolean', 'Finding resolved must be boolean');
-      return { severity: f.severity, resolved: f.resolved, text: text(f.text, 'Finding text') };
-    },
-  );
+  const resolves =
+    input.resolves !== undefined
+      ? list(input.resolves, 'Resolves').map((r) => text(r, 'Resolved finding ID'))
+      : [];
+  const historicalFindings = new Map<string, ReviewFinding>();
+  const resolvedIds = new Set<string>();
+  for (const prev of record.reviews) {
+    for (const f of prev.findings) {
+      historicalFindings.set(f.id, f);
+      if (f.resolved) resolvedIds.add(f.id);
+    }
+    for (const resId of prev.resolves ?? []) {
+      resolvedIds.add(resId);
+    }
+  }
+  for (const resId of resolves) {
+    requireCondition(historicalFindings.has(resId), `Cannot resolve unknown finding ID: ${resId}`);
+    requireCondition(!resolvedIds.has(resId), `Finding ID ${resId} is already resolved`);
+    resolvedIds.add(resId);
+  }
+  const seenFindingIds = new Set<string>();
+  const findings = list(input.findings, 'Review findings').map((raw, index): ReviewFinding => {
+    const f = object(raw);
+    requireCondition(
+      f.severity === 'critical' || f.severity === 'important' || f.severity === 'suggestion',
+      'Invalid finding severity',
+    );
+    requireCondition(typeof f.resolved === 'boolean', 'Finding resolved must be boolean');
+    const id =
+      typeof f.id === 'string' && f.id.trim()
+        ? f.id.trim()
+        : `finding-${record.reviews.length + 1}-${index + 1}`;
+    requireCondition(!seenFindingIds.has(id), `Duplicate finding ID in review: ${id}`);
+    requireCondition(
+      !historicalFindings.has(id),
+      `Finding ID already exists in prior review: ${id}`,
+    );
+    seenFindingIds.add(id);
+    return { id, severity: f.severity, resolved: f.resolved, text: text(f.text, 'Finding text') };
+  });
   const receipt: Review = {
     id: randomUUID(),
     kind: input.kind,
@@ -149,6 +178,7 @@ export function recordReview(root: string, record: DeliveryRecord, value: unknow
     builder,
     evidence: text(input.evidence, 'Review evidence'),
     findings,
+    resolves,
   };
   record.reviews.push(receipt);
   return receipt;
@@ -174,10 +204,6 @@ export function assertReview(root: string, record: DeliveryRecord): void {
       receipt.reviewer !== receipt.builder && receipt.evidence,
       'Invalid review execution',
     );
-    requireCondition(
-      !receipt.findings.some((f) => f.severity !== 'suggestion' && !f.resolved),
-      'Unresolved review findings',
-    );
     const historical = record.verifications.find((v) => v.hash === receipt!.verification);
     requireCondition(
       historical && historical.head === receipt.head && historical.manifest === receipt.manifest,
@@ -194,14 +220,25 @@ export function assertReview(root: string, record: DeliveryRecord): void {
     requireCondition(parent && parent.head === receipt.base, 'Broken review coverage chain');
     receipt = parent;
   }
-  // A new full review must not silently discard unresolved blockers from prior reviews.
-  // Scan every recorded receipt regardless of chain membership.
+  // A new full or delta review must not silently discard unresolved blockers from prior reviews.
+  // Calculate remaining unresolved critical and important findings across all recorded receipts.
+  // Any historical blocker must be explicitly resolved by a review receipt on the active verified chain.
+  const unresolvedBlockers = new Map<string, ReviewFinding>();
   for (const review of record.reviews) {
-    requireCondition(
-      !review.findings.some((f) => f.severity !== 'suggestion' && !f.resolved),
-      'Unresolved review findings',
-    );
+    for (const f of review.findings) {
+      if (f.severity !== 'suggestion' && !f.resolved) {
+        unresolvedBlockers.set(f.id, f);
+      }
+    }
   }
+  for (const review of record.reviews) {
+    if (seen.has(review.id)) {
+      for (const resId of review.resolves ?? []) {
+        unresolvedBlockers.delete(resId);
+      }
+    }
+  }
+  requireCondition(unresolvedBlockers.size === 0, 'Unresolved review findings');
 }
 
 function verificationDigest(verification: Verification): string {

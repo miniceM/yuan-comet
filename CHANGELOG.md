@@ -21,8 +21,11 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 - **Enterprise projection skill detection**: Extend `doctor`, `update`, and `uninstall` commands to properly recognize installed `sdd` and `sdd-*` enterprise projection skills alongside canonical skills when checking health sentinel paths, refreshing local skills, and cleaning up installations.
 - **Delivery review baseline**: Verify that the review baseline SHA is an ancestor of the remote target branch before push or PR creation, preventing locally-ahead base branches from producing PRs with unreviewed code.
 - **Delivery push URL authorization**: Validate all configured push URLs (not only the first) against the bound repository, closing a bypass where additional push URLs could silently deliver code to unauthorized repositories.
-- **Delivery review findings enforcement**: Scan all recorded review receipts for unresolved critical/important findings regardless of review chain membership, preventing a new clean full review from silently discarding prior blockers.
+- **Delivery review findings enforcement and resolution**: Track active unresolved critical and important findings dynamically and allow subsequent reviews to explicitly resolve prior blockers via `resolves`, preventing a clean review from silently discarding prior blockers while allowing verified issue fixes to proceed.
 - **Delivery push error classification**: Classify deterministic git push failures (authentication, permission denied, non-fast-forward) as retryable `failed` rather than permanent `uncertain`, so users can fix the prerequisite and retry without manual observation.
+- **Native delivery push gate**: Ensure Native workspace finish with `finish=push` routes through GitHub Delivery preflight when a delivery binding exists, preventing ungranted pushes from bypassing verification and review gates.
+- **Pull request revision push and replacement**: Support pushing new verified commits to open PRs without false drift failures, and allow creating replacement PRs after a prior PR is closed-unmerged.
+- **Delivery issue scope confirmation audit**: Persist `scopeConfirmation` and `confirmedBodyHash` when binding existing issues, preserving auditability throughout subsequent sync and observe cycles.
 
 ## What's Changed [0.4.0] - 2026-09-08
 

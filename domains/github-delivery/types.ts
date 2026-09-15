@@ -34,6 +34,12 @@ export interface Verification {
   items: Evidence[];
   carry?: { parent: string; diff: string; evidence: string };
 }
+export interface ReviewFinding {
+  id: string;
+  severity: 'critical' | 'important' | 'suggestion';
+  resolved: boolean;
+  text: string;
+}
 export interface Review {
   id: string;
   kind: 'full' | 'delta';
@@ -46,11 +52,8 @@ export interface Review {
   reviewer: string;
   builder: string;
   evidence: string;
-  findings: Array<{
-    severity: 'critical' | 'important' | 'suggestion';
-    resolved: boolean;
-    text: string;
-  }>;
+  findings: ReviewFinding[];
+  resolves?: string[];
 }
 export interface RemoteIssue {
   number: number;
@@ -107,6 +110,8 @@ export interface DeliveryRecord {
     state: string;
     scopeHash: string | null;
     bodyHash: string;
+    scopeConfirmation?: string;
+    confirmedBodyHash?: string;
   } | null;
   verifications: Verification[];
   reviews: Review[];

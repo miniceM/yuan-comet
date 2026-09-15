@@ -46,5 +46,16 @@ export function prBody(
         evidence = v.items.find((e) => e.key === i.key);
       return `| ${i.key} | ${included ? (evidence?.status ?? 'not-run') : 'Outside this delivery'} | ${cell(included ? (evidence?.evidence.join('; ') ?? '') : 'Issue remains open')} |`;
     });
-  return `## Summary\n\n${s.changes}\n\n## Scope / Impact\n\n${s.impact}\n\n## Compatibility / Migration / Rollback\n\n${s.compatibility}\n\n## Acceptance\n\n| AC | Result | Evidence |\n| --- | --- | --- |\n${rows.join('\n')}\n\n## Review\n\n${record.reviews.map((r) => `- ${r.kind}: ${r.base}..${r.head}; reviewer: ${r.reviewer}; evidence: ${r.evidence}\n${r.findings.map((f) => `  - ${f.severity}: ${f.text} (${f.resolved ? 'resolved' : 'open'})`).join('\n')}`).join('\n')}\n\n## Verification\n\nLocal evidence recorded for ${v.head}.\n${v.items.map((i) => `- ${i.key}: ${i.status} — ${i.reason}`).join('\n')}\n\nCI: Pending; local verification does not prove CI passed.\n\n## Issue\n\n${resolution === 'full' ? 'Closes' : 'Related to'} #${record.issue!.number}\n\n${marker(record, operation)}\n`;
+  const allResolves = new Set(record.reviews.flatMap((r) => r.resolves ?? []));
+  const reviewLines = record.reviews.map((r) => {
+    const resolvesTag =
+      r.resolves && r.resolves.length > 0 ? `; resolves: ${r.resolves.join(', ')}` : '';
+    const findingLines = r.findings.map(
+      (f) =>
+        `  - ${f.severity} [${f.id}]: ${f.text} (${f.resolved || allResolves.has(f.id) ? 'resolved' : 'open'})`,
+    );
+    const sub = findingLines.length > 0 ? `\n${findingLines.join('\n')}` : '';
+    return `- ${r.kind}: ${r.base}..${r.head}; reviewer: ${r.reviewer}; evidence: ${r.evidence}${resolvesTag}${sub}`;
+  });
+  return `## Summary\n\n${s.changes}\n\n## Scope / Impact\n\n${s.impact}\n\n## Compatibility / Migration / Rollback\n\n${s.compatibility}\n\n## Acceptance\n\n| AC | Result | Evidence |\n| --- | --- | --- |\n${rows.join('\n')}\n\n## Review\n\n${reviewLines.join('\n')}\n\n## Verification\n\nLocal evidence recorded for ${v.head}.\n${v.items.map((i) => `- ${i.key}: ${i.status} — ${i.reason}`).join('\n')}\n\nCI: Pending; local verification does not prove CI passed.\n\n## Issue\n\n${resolution === 'full' ? 'Closes' : 'Related to'} #${record.issue!.number}\n\n${marker(record, operation)}\n`;
 }

@@ -19,6 +19,10 @@ import {
   pushWorkflowDelivery,
 } from '../../../domains/github-delivery/workflow-adapter.js';
 
+import { finishArchivedNativeWorkspace } from '../../../domains/comet-native/native-workspace-finish.js';
+import { nativeProjectPaths } from '../../../domains/comet-native/native-paths.js';
+import type { NativeChangeState } from '../../../domains/comet-native/native-types.js';
+
 class FakeGithub implements GithubClient {
   issueRows: RemoteIssue[] = [];
   prRows: RemotePr[] = [];
@@ -37,10 +41,19 @@ class FakeGithub implements GithubClient {
   pr(number: number) {
     const row = this.prRows.find((i) => i.number === number);
     if (!row) throw new Error('404');
-    return structuredClone(row);
+    const copy = structuredClone(row);
+    if (remoteSha && copy.state === 'open') {
+      copy.head.sha = remoteSha;
+    }
+    return copy;
   }
   prs() {
-    return structuredClone(this.prRows);
+    return structuredClone(this.prRows).map((r) => {
+      if (remoteSha && r.state === 'open') {
+        r.head.sha = remoteSha;
+      }
+      return r;
+    });
   }
   createIssue(_title: string, body: string) {
     this.issueWrites++;
@@ -710,5 +723,218 @@ describe('GitHub delivery contracts', () => {
         .operations.filter((o) => o.kind === 'push')
         .map((o) => o.status),
     ).toEqual(['failed', 'completed']);
+  });
+  it('blocks bound Native finish=push when push authorization is missing (no git push executed)', async () => {
+    let r = bind('native');
+    // Only grant issue:create, do not grant push
+    service.local(r.id, 'grant', { action: 'issue:create', source: 'user:explicit' });
+    r = service.issue(r.id);
+    r = verify(r);
+    r = review(r);
+
+    const paths = await nativeProjectPaths(root, '.');
+    const state = {
+      name: 'delivery',
+      spec_changes: [],
+    } as unknown as NativeChangeState;
+    mkdirSync(path.join(root, 'archive'), { recursive: true });
+    writeFileSync(path.join(root, 'archive/report.md'), 'done');
+    command('add', '.');
+    command('commit', '-qm', 'archive changes');
+    r = verify(r);
+    r = review(r);
+
+    // Without push grant, Native finish=push must be blocked by missing authorization and no git push must occur
+    await expect(
+      finishArchivedNativeWorkspace({
+        paths,
+        state,
+        name: 'delivery',
+        archiveDir: path.join(root, 'archive'),
+        transactionId: 'tx',
+        plan: {
+          finish: 'push',
+          changeRoot: root,
+          primaryRoot: root,
+          changeBranch: 'codex/delivery',
+          targetBranch: 'main',
+          targetRoot: null,
+          remote: 'origin',
+          isolation: 'branch',
+          pullRequestFinish: null,
+        },
+      }),
+    ).rejects.toThrow(/push/i);
+    expect(remoteSha).toBeNull();
+  });
+  it('recovers delivery when a previous unresolved important finding is explicitly resolved in a subsequent review', () => {
+    let r = ready();
+    // Review 1 reports an unresolved important finding
+    review(r, {
+      findings: [
+        { id: 'sec-1', severity: 'important', resolved: false, text: 'SQL injection risk' },
+      ],
+    });
+    expect(() => service.check(r.id, 'full')).toThrow('Unresolved review findings');
+
+    // Builder adds fix commit and records fresh verification
+    writeFileSync(path.join(root, 'fix.txt'), 'fixed');
+    command('add', '.');
+    command('commit', '-qm', 'fix SQL injection');
+    r = verify(r);
+
+    // Review 2 with no resolves still fails (clean review cannot bypass blocker)
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+    });
+    expect(() => service.check(r.id, 'full')).toThrow('Unresolved review findings');
+
+    // Review 3 explicitly resolves the finding
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+      resolves: ['sec-1'],
+    });
+    expect(() => service.check(r.id, 'full')).not.toThrow();
+
+    // Delivery can proceed to push and PR
+    service.push(r.id, 'full');
+    const res = service.pr(r.id, 'full');
+    expect(res.pr?.state).toBe('open');
+    expect(client.prRows[0].body).toContain('resolves: sec-1');
+  });
+  it('allows pushing new verified commit to update open PR and updating PR expected SHA', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    const created = service.pr(r.id, 'full');
+    expect(created.pr?.state).toBe('open');
+
+    // Local adds a fix commit (e.g. for CI or review feedback)
+    writeFileSync(path.join(root, 'ci-fix.txt'), 'ci fixed');
+    command('add', '.');
+    command('commit', '-qm', 'fix for CI failure');
+    const secondSha = currentHead();
+
+    // Verify and review the new commit
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+    });
+
+    // Push new commit to update the open PR
+    const pushed = service.push(r.id, 'full');
+    expect(pushed.push?.sha).toBe(secondSha);
+    expect(pushed.pr?.sha).toBe(secondSha);
+    expect(pushed.pr?.drifted).toBe(false);
+
+    // Observe reflects open PR with updated SHA and no drift
+    const observed = service.observe(r.id);
+    expect(observed.pr?.state).toBe('open');
+    expect(observed.pr?.sha).toBe(secondSha);
+    expect(observed.pr?.drifted).toBe(false);
+  });
+  it('allows creating a replacement PR after a prior PR was closed-unmerged', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    const created = service.pr(r.id, 'full');
+    expect(created.pr?.number).toBe(1);
+
+    // PR1 is closed unmerged on GitHub
+    client.prRows[0].state = 'closed';
+    client.prRows[0].merged_at = null;
+    const observed = service.observe(r.id);
+    expect(observed.pr?.state).toBe('closed-unmerged');
+    expect(observed.issueClosure).toBe('pending');
+    expect(client.issueRows[0].state).toBe('open');
+
+    // Local fixes the change with a new commit
+    writeFileSync(path.join(root, 'replacement.txt'), 'replacement fix');
+    command('add', '.');
+    command('commit', '-qm', 'fix after closed PR');
+    const newHead = currentHead();
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+    });
+
+    // Push new commit and create replacement PR
+    service.push(r.id, 'full');
+    const replacement = service.pr(r.id, 'full');
+    expect(client.prWrites).toBe(2);
+    expect(replacement.pr?.number).toBe(2);
+    expect(replacement.pr?.state).toBe('open');
+    expect(replacement.pr?.sha).toBe(newHead);
+    expect(replacement.issueClosure).toBe('pending');
+  });
+  it('persists scopeConfirmation and confirmedBodyHash when binding existing issue and preserves them on observe', () => {
+    const r = bind();
+    grantAll(r);
+    // Create an existing issue in the remote client first
+    client.createIssue(
+      'Existing issue',
+      'Initial existing issue text\n\n<!-- comet:delivery=existing -->',
+    );
+    const issueNum = 1;
+    const initialBodyHash = hash(client.issueRows[0].body);
+
+    const bound = service.issue(r.id, {
+      number: issueNum,
+      expectedBodyHash: initialBodyHash,
+      scopeConfirmation: 'User verified scope confirmation for issue #1',
+    });
+
+    expect(bound.issue).toMatchObject({
+      number: issueNum,
+      bodyHash: initialBodyHash,
+      confirmedBodyHash: initialBodyHash,
+      scopeConfirmation: 'User verified scope confirmation for issue #1',
+    });
+
+    // When observing / syncing issue later, the audit confirmation must be retained
+    const observed = service.observe(r.id);
+    expect(observed.issue?.scopeConfirmation).toBe('User verified scope confirmation for issue #1');
+    expect(observed.issue?.confirmedBodyHash).toBe(initialBodyHash);
+  });
+  it('rejects resolves declared on an abandoned or unlinked review branch (resolves must be on active chain)', () => {
+    let r = ready();
+    // Review 1 reports a blocker
+    review(r, {
+      findings: [{ id: 'vuln-1', severity: 'critical', resolved: false, text: 'critical vuln' }],
+    });
+    expect(() => service.check(r.id, 'full')).toThrow('Unresolved review findings');
+
+    // Builder creates commit A and records verification
+    writeFileSync(path.join(root, 'commit-a.txt'), 'commit a');
+    command('add', '.');
+    command('commit', '-qm', 'commit a');
+    verify(r);
+
+    // An unlinked delta review claims to resolve vuln-1 on commit A
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+      resolves: ['vuln-1'],
+    });
+
+    // But then an alternative fix commit B is made
+    writeFileSync(path.join(root, 'commit-b.txt'), 'commit b');
+    command('add', '.');
+    command('commit', '-qm', 'commit b');
+    verify(r);
+
+    // Active chain is a new full review on commit B that forgot to resolve vuln-1
+    review(r);
+
+    // Since the resolving review is NOT on the active chain of the latest review,
+    // the critical finding vuln-1 must still block preflight!
+    expect(() => service.check(r.id, 'full')).toThrow('Unresolved review findings');
   });
 });

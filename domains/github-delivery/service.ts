@@ -192,12 +192,19 @@ export class GithubDelivery {
       throw error;
     }
   }
-  private bindIssue(record: DeliveryRecord, issue: RemoteIssue, confirmed = false): void {
+  private bindIssue(
+    record: DeliveryRecord,
+    issue: RemoteIssue,
+    confirmed = false,
+    audit?: { scopeConfirmation?: string; confirmedBodyHash?: string },
+  ): void {
     requireCondition(!issue.pull_request, 'Cannot bind a pull request as an issue');
     requireCondition(
       !record.issue || record.issue.number === issue.number,
       'Cannot silently replace issue binding',
     );
+    const scopeConfirmation = audit?.scopeConfirmation ?? record.issue?.scopeConfirmation;
+    const confirmedBodyHash = audit?.confirmedBodyHash ?? record.issue?.confirmedBodyHash;
     record.issue = {
       number: issue.number,
       url: issue.html_url,
@@ -208,6 +215,8 @@ export class GithubDelivery {
         (confirmed || !record.issue || record.issue.bodyHash === hash(issue.body ?? ''))
           ? record.scope.hash
           : null,
+      ...(scopeConfirmation ? { scopeConfirmation } : {}),
+      ...(confirmedBodyHash ? { confirmedBodyHash } : {}),
     };
   }
   inspectIssue(id: string, value: unknown): { issue: RemoteIssue; bodyHash: string } {
@@ -238,7 +247,10 @@ export class GithubDelivery {
           'Existing issue requires current body hash and explicit whole-issue scope confirmation',
         );
         requireCondition(issue.state === 'open', 'Cannot bind a closed issue');
-        this.bindIssue(record, issue);
+        this.bindIssue(record, issue, true, {
+          scopeConfirmation: input.scopeConfirmation.trim(),
+          confirmedBodyHash: input.expectedBodyHash,
+        });
         return record;
       }
       if (record.issue) return record;
@@ -333,17 +345,18 @@ export class GithubDelivery {
   push(id: string, resolution: 'full' | 'partial'): DeliveryRecord {
     return this.mutation(id, (record, client) => {
       preflight(this.root, record, resolution, 'push');
-      const priorPr = record.operations.find(
-        (op) => op.kind === 'pull-request:create' && op.status !== 'failed',
-      );
+      const priorPr = record.operations
+        .slice()
+        .reverse()
+        .find((op) => op.kind === 'pull-request:create' && op.status !== 'failed');
       if (priorPr) {
         requireCondition(
-          this.reconcilePr(record, client, priorPr, priorPr.resolution ?? 'partial'),
+          this.reconcilePr(record, client, priorPr, priorPr.resolution ?? 'partial', true),
           'PR create is uncertain; observe before any push',
         );
         requireCondition(
-          record.pr?.state === 'open',
-          'PR already closed or merged; do not recreate its remote branch',
+          record.pr?.state !== 'merged',
+          'PR already merged; do not recreate its remote branch',
         );
       }
       if (record.push?.sha === head(this.root))
@@ -353,6 +366,12 @@ export class GithubDelivery {
         );
       if (remoteHead(this.root, record) === head(this.root)) {
         record.push = { sha: head(this.root), observedAt: new Date().toISOString() };
+        if (record.pr && record.pr.state === 'open') {
+          record.pr.sha = head(this.root);
+          record.pr.observedSha = head(this.root);
+          record.pr.drifted = false;
+          record.pr.driftReason = null;
+        }
         return record;
       }
       const op = this.prepared(record, 'push', () => '');
@@ -371,6 +390,12 @@ export class GithubDelivery {
         () => {
           if (remoteHead(this.root, record) !== op.head) return false;
           record.push = { sha: op.head, observedAt: new Date().toISOString() };
+          if (record.pr && record.pr.state === 'open') {
+            record.pr.sha = op.head;
+            record.pr.observedSha = op.head;
+            record.pr.drifted = false;
+            record.pr.driftReason = null;
+          }
           return true;
         },
       );
@@ -409,10 +434,16 @@ export class GithubDelivery {
     return driftReason === null;
   }
   private deliveredPrSha(record: DeliveryRecord, number: number): string {
+    if (record.pr && record.pr.number === number && record.pr.sha) {
+      return record.pr.sha;
+    }
     return (
-      record.operations.find(
-        (operation) => operation.kind === 'pull-request:create' && operation.remoteRef === number,
-      )?.head ??
+      record.operations
+        .slice()
+        .reverse()
+        .find(
+          (operation) => operation.kind === 'pull-request:create' && operation.remoteRef === number,
+        )?.head ??
       record.pr?.sha ??
       ''
     );
@@ -422,6 +453,7 @@ export class GithubDelivery {
     client: GithubClient,
     op: Operation,
     resolution: 'full' | 'partial',
+    forPush = false,
   ): boolean {
     const matches = op.remoteRef
       ? [client.pr(op.remoteRef)]
@@ -429,7 +461,11 @@ export class GithubDelivery {
     requireCondition(matches.length <= 1, 'Multiple matching PRs; cannot reconcile');
     const pr = matches[0];
     if (!pr) return false;
-    const matchesDelivery = this.capturePr(record, pr, resolution, op.head);
+    const expectedSha =
+      (record.pr && record.pr.number === pr.number ? record.pr.sha : null) ??
+      record.push?.sha ??
+      op.head;
+    const matchesDelivery = this.capturePr(record, pr, resolution, expectedSha);
     op.remoteRef = pr.number;
     op.status = 'completed';
     this.store.save(record);
@@ -442,10 +478,12 @@ export class GithubDelivery {
         pr.body === op.body,
         'PR exists but body changed; inspect acceptance and issue relation before continuing',
       );
-      requireCondition(
-        pr.head.sha === head(this.root),
-        'Existing PR does not deliver current local HEAD',
-      );
+      if (!forPush) {
+        requireCondition(
+          pr.head.sha === expectedSha,
+          'Existing PR does not deliver current verified push HEAD',
+        );
+      }
     }
     return true;
   }
@@ -455,9 +493,10 @@ export class GithubDelivery {
     provider?: (record: DeliveryRecord, body: string) => void,
   ): DeliveryRecord {
     return this.mutation(id, (record, client) => {
-      const prior = record.operations.find(
-        (o) => o.kind === 'pull-request:create' && o.status !== 'failed',
-      );
+      const prior = record.operations
+        .slice()
+        .reverse()
+        .find((o) => o.kind === 'pull-request:create' && o.status !== 'failed');
       if (prior) {
         requireCondition(
           this.reconcilePr(
@@ -468,9 +507,17 @@ export class GithubDelivery {
           ),
           'PR create uncertain; observe only',
         );
-        if (record.pr?.state === 'open')
+        if (record.pr?.state === 'open') {
           preflight(this.root, record, prior.resolution ?? resolution);
-        return record;
+          return record;
+        }
+        if (record.pr?.state === 'merged') {
+          return record;
+        }
+        const currentDeliveredSha = record.push?.sha ?? head(this.root);
+        if (record.pr?.state === 'closed-unmerged' && currentDeliveredSha === prior.head) {
+          return record;
+        }
       }
       preflight(this.root, record, resolution);
       assertPushed(this.root, record);
@@ -537,6 +584,12 @@ export class GithubDelivery {
           if (remoteHead(this.root, record) === op.head) {
             op.status = 'completed';
             record.push = { sha: op.head, observedAt: new Date().toISOString() };
+            if (record.pr && record.pr.state === 'open') {
+              record.pr.sha = op.head;
+              record.pr.observedSha = op.head;
+              record.pr.drifted = false;
+              record.pr.driftReason = null;
+            }
           }
         }
       }
