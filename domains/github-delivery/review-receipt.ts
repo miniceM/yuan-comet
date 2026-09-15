@@ -194,6 +194,14 @@ export function assertReview(root: string, record: DeliveryRecord): void {
     requireCondition(parent && parent.head === receipt.base, 'Broken review coverage chain');
     receipt = parent;
   }
+  // A new full review must not silently discard unresolved blockers from prior reviews.
+  // Scan every recorded receipt regardless of chain membership.
+  for (const review of record.reviews) {
+    requireCondition(
+      !review.findings.some((f) => f.severity !== 'suggestion' && !f.resolved),
+      'Unresolved review findings',
+    );
+  }
 }
 
 function verificationDigest(verification: Verification): string {

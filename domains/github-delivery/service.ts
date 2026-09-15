@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { runGitCommand, assertValidGitBranchName } from '../../platform/process/git.js';
+import {
+  runGitCommand,
+  assertValidGitBranchName,
+  GitCommandError,
+} from '../../platform/process/git.js';
 import type { DeliveryRecord, Operation, RemoteIssue, RemotePr } from './types.js';
 import { DeliveryStore } from './store.js';
 import { GithubCli, GithubOperationError, type GithubClient } from './github-cli.js';
@@ -149,6 +153,15 @@ export class GithubDelivery {
     this.store.save(record);
     return op;
   }
+  private static isDefinitelyNotApplied(error: unknown): boolean {
+    if (error instanceof GithubOperationError) return error.definitelyNotApplied;
+    if (error instanceof GitCommandError) {
+      return /permission denied|authentication|could not read|non-fast-forward|rejected|denied/i.test(
+        error.stderr,
+      );
+    }
+    return false;
+  }
   private execute(
     record: DeliveryRecord,
     op: Operation,
@@ -160,10 +173,7 @@ export class GithubDelivery {
       write();
     } catch (error) {
       writeFailure = error;
-      op.status =
-        error instanceof GithubOperationError && error.definitelyNotApplied
-          ? 'failed'
-          : 'uncertain';
+      op.status = GithubDelivery.isDefinitelyNotApplied(error) ? 'failed' : 'uncertain';
       this.store.save(record);
       if (op.status === 'failed') throw error;
     }

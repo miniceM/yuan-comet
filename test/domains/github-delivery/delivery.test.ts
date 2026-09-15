@@ -11,6 +11,7 @@ import type {
   RemotePr,
 } from '../../../domains/github-delivery/types.js';
 import { GithubCli, GithubOperationError } from '../../../domains/github-delivery/github-cli.js';
+import { GitCommandError } from '../../../platform/process/git.js';
 import { finishNativePullRequest } from '../../../domains/comet-native/native-pull-request-finish.js';
 import type { GithubClient } from '../../../domains/github-delivery/github-cli.js';
 import {
@@ -74,7 +75,11 @@ class FakeGithub implements GithubClient {
     return this.prRows.at(-1)!.html_url;
   }
 }
-let root: string, client: FakeGithub, service: GithubDelivery, remoteSha: string | null;
+let root: string,
+  client: FakeGithub,
+  service: GithubDelivery,
+  remoteSha: string | null,
+  remoteBaseSha: string | null;
 function command(...args: string[]): string {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 }
@@ -159,9 +164,17 @@ beforeEach(() => {
   command('switch', '-qc', 'codex/delivery');
   command('remote', 'add', 'origin', 'https://github.com/acme/test.git');
   remoteSha = null;
+  remoteBaseSha = command('rev-parse', 'refs/heads/main');
   const real = git.runGitCommand;
   vi.spyOn(git, 'runGitCommand').mockImplementation((cwd, args) => {
-    if (args[0] === 'ls-remote') return remoteSha ? `${remoteSha}\trefs/heads/codex/delivery` : '';
+    if (args[0] === 'ls-remote') {
+      const refPattern = args.at(-1) ?? '';
+      if (refPattern.includes('codex/delivery'))
+        return remoteSha ? `${remoteSha}\trefs/heads/codex/delivery` : '';
+      if (refPattern.includes('main'))
+        return remoteBaseSha ? `${remoteBaseSha}\trefs/heads/main` : '';
+      return '';
+    }
     if (args[0] === 'push') {
       remoteSha = args.at(-1)!.split(':')[0];
       return '';
@@ -586,5 +599,116 @@ describe('GitHub delivery contracts', () => {
     expect(readFileSync(path.join(service.store.directory, `${r.id}.json`), 'utf8')).not.toContain(
       'token',
     );
+  });
+  it('rejects push when local base is ahead of remote base (P1-1: unreviewed code)', () => {
+    // Normal ready() binds baseSha = merge-base(local main, HEAD).
+    // When remote main is behind local main, baseSha is ahead of remote base,
+    // meaning the PR would contain commits X (local-only on main) + Y (feature)
+    // but review only covers Y. Preflight must reject this.
+    const initialSha = command('rev-list', '--max-parents=0', 'HEAD');
+
+    // Add a local-only commit to main (not pushed to remote)
+    command('switch', '-q', 'main');
+    writeFileSync(path.join(root, 'local-only.txt'), 'not pushed');
+    command('add', '.');
+    command('commit', '-qm', 'local-only commit on main');
+    const localMainSha = command('rev-parse', 'HEAD');
+    command('switch', '-q', 'codex/delivery');
+
+    // Merge local main into feature so merge-base picks up the local main commit
+    command('merge', '-q', '--no-edit', 'main');
+
+    // Remote base is still at the initial commit (before the local-only commit)
+    remoteBaseSha = initialSha;
+
+    // Bind a new delivery — baseSha will be localMainSha (ahead of remote)
+    const service2 = new GithubDelivery(root, () => client);
+    const r2 = service2.bind({
+      repository: 'acme/test',
+      workflow: 'classic',
+      change: 'baseline-test',
+      base: 'main',
+      head: 'codex/delivery',
+      remote: 'origin',
+      summary: {
+        title: 'Test',
+        background: 'bg',
+        changes: 'ch',
+        impact: 'im',
+        nonGoals: 'ng',
+        compatibility: 'co',
+      },
+      scope: {
+        confirmation: 'user:initial',
+        items: [
+          { source: 'docs/requirements.md', internalRef: 'scenario-1', text: 'First acceptance' },
+        ],
+      },
+    });
+    // baseSha should be the local main commit, which is ahead of remoteBaseSha
+    expect(r2.binding.baseSha).toBe(localMainSha);
+    for (const action of ['issue:create', 'push', 'pull-request:create'] as const)
+      service2.local(r2.id, 'grant', { action, source: 'user:explicit' });
+    service2.issue(r2.id);
+    const r2read = service2.store.read(r2.id);
+    service2.local(r2.id, 'verify', {
+      head: currentHead(),
+      manifest: r2read.scope.hash,
+      items: r2read.scope.committedKeys.map((key) => ({
+        key,
+        revision: r2read.scope.items.find((i) => i.key === key)!.revision,
+        status: 'passed',
+        evidence: ['test:observed'],
+        reason: 'Observed test result',
+      })),
+    });
+    const r2v = service2.store.read(r2.id);
+    service2.local(r2.id, 'review', {
+      head: currentHead(),
+      base: r2v.binding.baseSha,
+      manifest: r2v.scope.hash,
+      verification: r2v.verifications.at(-1)!.hash,
+      kind: 'full',
+      reviewer: 'review-execution',
+      builder: 'build-execution',
+      evidence: 'review:report',
+      findings: [],
+    });
+    // preflight should reject because baseSha is ahead of remote base
+    expect(() => service2.push(r2.id, 'full')).toThrow('Review baseline is ahead');
+  });
+  it('rejects multiple push URLs targeting different repositories (P1-2: pushurl bypass)', () => {
+    command('remote', 'set-url', '--push', '--add', 'origin', 'https://github.com/evil/repo.git');
+    expect(() => bind()).toThrow('remote');
+  });
+  it('rejects a new clean full review when a prior full review has unresolved findings (P1-3: review bypass)', () => {
+    // First full review with unresolved important finding
+    let r = ready();
+    review(r, { findings: [{ severity: 'important', resolved: false, text: 'security issue' }] });
+    // Second full review with no findings — should NOT bypass the prior blocker
+    review(r);
+    expect(() => service.check(r.id, 'full')).toThrow('Unresolved');
+  });
+  it('records git push authentication failures as retryable failed, not permanent uncertain (P1-4)', () => {
+    const r = ready();
+    const real = vi.mocked(git.runGitCommand);
+    const originalImpl = real.getMockImplementation()!;
+    real.mockImplementation((cwd, args) => {
+      if (args[0] === 'push') {
+        throw new GitCommandError(cwd, args, 'fatal: Authentication failed for remote');
+      }
+      return originalImpl(cwd, args);
+    });
+    expect(() => service.push(r.id, 'full')).toThrow();
+    expect(service.store.read(r.id).operations.at(-1)?.status).toBe('failed');
+    // After fixing authentication, push should succeed (not blocked by uncertain)
+    real.mockImplementation(originalImpl);
+    service.push(r.id, 'full');
+    expect(
+      service.store
+        .read(r.id)
+        .operations.filter((o) => o.kind === 'push')
+        .map((o) => o.status),
+    ).toEqual(['failed', 'completed']);
   });
 });

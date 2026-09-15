@@ -9,12 +9,17 @@ export function assertRepositoryBinding(
   root: string,
   binding: Pick<DeliveryRecord['binding'], 'repository' | 'remote'>,
 ): void {
-  const remote = runGitCommand(root, ['remote', 'get-url', '--push', binding.remote]);
-  const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([^\s]+?)(?:\.git)?$/.exec(remote);
-  requireCondition(
-    match && match[1].toLowerCase() === binding.repository.toLowerCase(),
-    'Push remote does not match the bound GitHub repository',
-  );
+  const urls = runGitCommand(root, ['remote', 'get-url', '--push', '--all', binding.remote])
+    .split('\n')
+    .filter(Boolean);
+  requireCondition(urls.length > 0, 'No push URL configured for the delivery remote');
+  for (const url of urls) {
+    const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([^\s]+?)(?:\.git)?$/.exec(url);
+    requireCondition(
+      match && match[1].toLowerCase() === binding.repository.toLowerCase(),
+      'Push remote does not match the bound GitHub repository',
+    );
+  }
 }
 
 export function assertBinding(root: string, record: DeliveryRecord): void {
@@ -29,6 +34,31 @@ export function assertBinding(root: string, record: DeliveryRecord): void {
   assertRepositoryBinding(root, b);
   requireCondition(gitWorktreeIsClean(root), 'Delivery requires a clean committed worktree');
 }
+export function assertRemoteBaseline(root: string, record: DeliveryRecord): void {
+  const result = runGitCommand(root, [
+    'ls-remote',
+    '--heads',
+    record.binding.remote,
+    `refs/heads/${record.binding.base}`,
+  ]);
+  requireCondition(
+    result !== '',
+    'Remote base branch does not exist; cannot verify review baseline',
+  );
+  const remoteBaseSha = result.split(/\s/)[0];
+  // The binding baseSha (merge-base of local base and HEAD at bind time) must be an ancestor of
+  // the current remote base.  If the local base was ahead of the remote at bind time, the
+  // merge-base would be too recent and the review would miss commits that are part of the PR diff.
+  try {
+    runGitCommand(root, ['merge-base', '--is-ancestor', record.binding.baseSha, remoteBaseSha]);
+  } catch {
+    requireCondition(
+      false,
+      'Review baseline is ahead of the remote target branch; the PR would contain unreviewed code. ' +
+        'Re-bind after syncing the local base branch with the remote',
+    );
+  }
+}
 export function preflight(
   root: string,
   record: DeliveryRecord,
@@ -36,6 +66,7 @@ export function preflight(
   action: 'push' | 'pull-request:create' = 'pull-request:create',
 ): void {
   assertBinding(root, record);
+  assertRemoteBaseline(root, record);
   requireCondition(
     !record.pr?.drifted,
     record.pr?.driftReason ?? 'Observed PR drift blocks delivery',

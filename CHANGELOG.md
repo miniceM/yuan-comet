@@ -19,6 +19,10 @@ All notable changes to @cli-tools/yuan-comet will be documented in this file.
 
 - **CLI package target and registry resolution**: Prevent `comet update` and background auto-update from targeting upstream `@rpamis/comet` or falling back into mixed upstream runtime directories, enforce enterprise package identity (`@cli-tools/yuan-comet`), support custom enterprise npm registries via `COMET_ENTERPRISE_NPM_REGISTRY`, and respect user environment npm configurations without hardcoding the public npm registry.
 - **Enterprise projection skill detection**: Extend `doctor`, `update`, and `uninstall` commands to properly recognize installed `sdd` and `sdd-*` enterprise projection skills alongside canonical skills when checking health sentinel paths, refreshing local skills, and cleaning up installations.
+- **Delivery review baseline**: Verify that the review baseline SHA is an ancestor of the remote target branch before push or PR creation, preventing locally-ahead base branches from producing PRs with unreviewed code.
+- **Delivery push URL authorization**: Validate all configured push URLs (not only the first) against the bound repository, closing a bypass where additional push URLs could silently deliver code to unauthorized repositories.
+- **Delivery review findings enforcement**: Scan all recorded review receipts for unresolved critical/important findings regardless of review chain membership, preventing a new clean full review from silently discarding prior blockers.
+- **Delivery push error classification**: Classify deterministic git push failures (authentication, permission denied, non-fast-forward) as retryable `failed` rather than permanent `uncertain`, so users can fix the prerequisite and retry without manual observation.
 
 ## What's Changed [0.4.0] - 2026-09-08
 
