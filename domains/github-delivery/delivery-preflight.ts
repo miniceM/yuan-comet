@@ -4,6 +4,19 @@ import { requireCondition } from './validation.js';
 import { assertReview, head } from './review-receipt.js';
 import { assertSources } from './acceptance-manifest.js';
 import { authorize } from './authorization.js';
+
+export function assertRepositoryBinding(
+  root: string,
+  binding: Pick<DeliveryRecord['binding'], 'repository' | 'remote'>,
+): void {
+  const remote = runGitCommand(root, ['remote', 'get-url', '--push', binding.remote]);
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([^\s]+?)(?:\.git)?$/.exec(remote);
+  requireCondition(
+    match && match[1].toLowerCase() === binding.repository.toLowerCase(),
+    'Push remote does not match the bound GitHub repository',
+  );
+}
+
 export function assertBinding(root: string, record: DeliveryRecord): void {
   const b = record.binding;
   requireCondition(
@@ -13,12 +26,7 @@ export function assertBinding(root: string, record: DeliveryRecord): void {
   requireCondition(b.head !== b.base, 'Delivery cannot push the target branch');
   if (b.repository.toLowerCase() === 'minicem/yuan-comet')
     requireCondition(b.base === 'enterprise/main', 'Enterprise delivery requires enterprise/main');
-  const remote = runGitCommand(root, ['remote', 'get-url', '--push', b.remote]);
-  const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([^\s]+?)(?:\.git)?$/.exec(remote);
-  requireCondition(
-    match && match[1].toLowerCase() === b.repository.toLowerCase(),
-    'Push remote does not match the bound GitHub repository',
-  );
+  assertRepositoryBinding(root, b);
   requireCondition(gitWorktreeIsClean(root), 'Delivery requires a clean committed worktree');
 }
 export function preflight(
@@ -28,6 +36,10 @@ export function preflight(
   action: 'push' | 'pull-request:create' = 'pull-request:create',
 ): void {
   assertBinding(root, record);
+  requireCondition(
+    !record.pr?.drifted,
+    record.pr?.driftReason ?? 'Observed PR drift blocks delivery',
+  );
   requireCondition(record.issue, 'Bind an issue before PR delivery');
   requireCondition(record.scope.committedKeys.length > 0, 'Empty acceptance scope');
   requireCondition(

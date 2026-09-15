@@ -67,7 +67,7 @@ export interface RemotePr extends RemoteIssue {
 export interface Operation {
   id: string;
   kind: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create';
-  status: 'prepared' | 'completed' | 'uncertain';
+  status: 'prepared' | 'completed' | 'uncertain' | 'failed';
   head: string;
   body: string;
   remoteRef?: number;
@@ -117,7 +117,11 @@ export interface DeliveryRecord {
     number: number;
     url: string;
     state: 'open' | 'merged' | 'closed-unmerged';
+    /** Immutable HEAD covered by verification and review when PR creation was prepared. */
     sha: string;
+    observedSha: string;
+    drifted: boolean;
+    driftReason: string | null;
     resolution: 'full' | 'partial';
   } | null;
   observedAt: string | null;

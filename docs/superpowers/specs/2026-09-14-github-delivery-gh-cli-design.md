@@ -409,6 +409,7 @@ Comet 不应覆盖用户在 Issue 中手工维护的全部内容。
 - [ ] AC-01 ...
 - [ ] AC-02 ...
 - [ ] AC-03 ...
+
 <!-- comet:acceptance:end -->
 
 <!-- comet:metadata
@@ -964,7 +965,7 @@ gh pr view
 - PR body 中的 delivery-id 和 operation-id（创建前写入）；
 - 原提交与当前 head SHA，以及 open/merged/closed 状态。
 
-分支或 SHA 变化时先保留候选，核对稳定操作标识，不把它视为“不存在”。候选歧义保持 uncertain，不创建新 PR。找到本次 PR 后，不论 open、merged 还是 closed-unmerged，创建操作均已发生；保存编号与实际状态。closed-unmerged 不自动重建，merged 不重复交付；open PR 的当前 HEAD 与待交付 HEAD 不符时报告漂移，不能宣告当前版本已交付。
+分支或 SHA 变化时先保留候选，核对稳定操作标识，不把它视为“不存在”。候选歧义保持 uncertain，不创建新 PR。找到本次 PR 后，不论 open、merged 还是 closed-unmerged，创建操作均已发生；保存编号与实际状态。创建操作的 prepared HEAD 是不可变的 delivered SHA，远端当前 SHA 只作为 observed SHA 保存。任何状态下 repository、base、head identity 或 SHA 与 prepared 操作不一致都记录为 drifted，不能覆盖 delivered SHA、关闭交付或自动重建。
 
 确认是本次 PR：
 
@@ -973,6 +974,8 @@ operation = completed
 ```
 
 查询失败、分页不完整、仅搜索无结果或远端尚未可见，都不构成“不存在”的证明。记录 uncertain 并继续只读核对；不能自动再次创建。只有确认先前写操作未发生且没有匹配对象时，才允许在原授权和同一 operation-id 下重试。PR 创建与查询之间没有服务端幂等键保证，无法判定的情况应明确保留待处理状态。
+
+`gh` 不存在、未登录、权限拒绝、仓库不可用等能够确认写入未执行的前置失败记录为 failed；修复前置条件后可沿用原动作授权重新执行。timeout、连接中断、响应丢失等无法判断服务端是否已写入的错误记录为 uncertain，必须先 observe。failed 不得被当作完成，uncertain 不得通过空查询自动转成 failed。
 
 ### 20.2 Issue 创建 timeout
 

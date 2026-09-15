@@ -13,7 +13,27 @@ export interface GithubClient {
   updateIssue(number: number, body: string): void;
   createPr(title: string, body: string, base: string, head: string): string;
 }
-export class GithubOperationError extends Error {}
+export type GithubFailureKind =
+  | 'gh-missing'
+  | 'unauthenticated'
+  | 'permission-denied'
+  | 'repository-unavailable'
+  | 'remote-uncertain';
+
+export class GithubOperationError extends Error {
+  constructor(
+    readonly kind: GithubFailureKind,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'GithubOperationError';
+  }
+
+  get definitelyNotApplied(): boolean {
+    return this.kind !== 'remote-uncertain';
+  }
+}
 
 export class GithubCli implements GithubClient {
   constructor(
@@ -42,8 +62,13 @@ export class GithubCli implements GithubClient {
                 ? 'repository-unavailable'
                 : 'remote-uncertain';
       // Do not echo raw subprocess output, which may contain credentials.
+      const recovery =
+        kind === 'remote-uncertain'
+          ? 'use delivery observe before retry'
+          : 'fix the reported prerequisite and retry the same delivery action';
       throw new GithubOperationError(
-        `${kind}: GitHub operation failed; check gh installation/authentication/repository access, then use delivery observe before retry`,
+        kind,
+        `${kind}: GitHub operation failed; check gh installation/authentication/repository access, then ${recovery}`,
         { cause: error },
       );
     }

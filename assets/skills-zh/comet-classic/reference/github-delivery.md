@@ -129,6 +129,6 @@ comet delivery observe --path <project-root> --id <delivery-id> --json
 
 部分交付改为 resolution=partial，PR 使用 Related to，保留 issue；full 才使用 Closes。创建 PR 不自动合并。CI 在 PR 正文中标记 Pending，不当作本地已通过。
 
-PR 创建失败后先 observe，不重新归档、不重复提交或直接再运行 gh create。已关闭/已合并 PR 也是已创建事实。结果仍 uncertain 时报告阻塞并继续只读核对；查询无结果不是重新创建的依据。推送记录与最终远端 SHA 不符时报告漂移。
+timeout、连接中断或响应丢失等结果不确定的创建失败先 observe，不重新归档、不重复提交或直接再运行 gh create；查询无结果不是重新创建的依据。`gh` 缺失、未登录、权限拒绝或仓库不可用等确定未写入的失败记为 failed，修复前置条件后可沿用原授权重试。已关闭/已合并 PR 也是已创建事实；所有状态都必须保持远端 HEAD 与原 verified/reviewed SHA 一致，漂移时保留原交付 SHA 并阻止完成。
 
 当前 GitHub CLI provider 支持 github.com 的同仓库分支交付（HTTPS 或 SSH remote），不支持跨 fork head 或 GitHub Enterprise hostname。原有未绑定的 Native repository-command 路径保持兼容；绑定后保留原有 provider 输入结构，并增加 delivery 对象（schema=comet.github-delivery.provider.v1，包含 repository/base/head/headSha/title/body），必须原样使用受审查正文，最终仍由 gh 查询验证。启用前应确认企业自定义命令支持该协议。

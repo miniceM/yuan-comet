@@ -7,7 +7,13 @@ import { hash, object, text, requireCondition } from './validation.js';
 import { syncManifest } from './acceptance-manifest.js';
 import { authorize, grant } from './authorization.js';
 import { head, recordReview, recordVerification, carryVerification } from './review-receipt.js';
-import { preflight, assertBinding, assertPushed, remoteHead } from './delivery-preflight.js';
+import {
+  preflight,
+  assertBinding,
+  assertPushed,
+  assertRepositoryBinding,
+  remoteHead,
+} from './delivery-preflight.js';
 import {
   issueBody,
   managedBody,
@@ -39,25 +45,26 @@ export class GithubDelivery {
       );
       const change = text(input.change, 'Change');
       requireCondition(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(change), 'Invalid change');
-      const existing = this.store
-        .records()
-        .find((r) => r.binding.workflow === input.workflow && r.binding.change === change);
-      if (existing) {
-        requireCondition(
-          existing.binding.repository === repository &&
-            existing.binding.base === input.base &&
-            existing.binding.head === input.head &&
-            existing.binding.remote === input.remote,
-          'Existing binding cannot silently change targets',
-        );
-        return existing;
-      }
       const base = text(input.base, 'Base'),
         branch = text(input.head, 'Head'),
         remote = text(input.remote, 'Remote');
       assertValidGitBranchName(this.root, base);
       assertValidGitBranchName(this.root, branch);
       requireCondition(/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remote), 'Invalid remote');
+      assertRepositoryBinding(this.root, { repository, remote });
+      const existing = this.store
+        .records()
+        .find((r) => r.binding.workflow === input.workflow && r.binding.change === change);
+      if (existing) {
+        requireCondition(
+          existing.binding.repository === repository &&
+            existing.binding.base === base &&
+            existing.binding.head === branch &&
+            existing.binding.remote === remote,
+          'Existing binding cannot silently change targets',
+        );
+        return existing;
+      }
       const summary = object(input.summary);
       const record: DeliveryRecord = {
         schema: 'comet.github-delivery.v1',
@@ -129,7 +136,9 @@ export class GithubDelivery {
     kind: Operation['kind'],
     body: (id: string) => string,
   ): Operation {
-    const pending = record.operations.find((o) => o.kind === kind && o.status !== 'completed');
+    const pending = record.operations.find(
+      (o) => o.kind === kind && (o.status === 'prepared' || o.status === 'uncertain'),
+    );
     requireCondition(
       !pending,
       `Uncertain ${kind}; use observe to reconcile operation ${pending?.id} before retry`,
@@ -151,8 +160,12 @@ export class GithubDelivery {
       write();
     } catch (error) {
       writeFailure = error;
-      op.status = 'uncertain';
+      op.status =
+        error instanceof GithubOperationError && error.definitelyNotApplied
+          ? 'failed'
+          : 'uncertain';
       this.store.save(record);
+      if (op.status === 'failed') throw error;
     }
     try {
       requireCondition(
@@ -200,6 +213,7 @@ export class GithubDelivery {
   }
   issue(id: string, value: unknown = {}): DeliveryRecord {
     return this.mutation(id, (record, client) => {
+      assertRepositoryBinding(this.root, record.binding);
       const input = object(value);
       if (input.number !== undefined) {
         requireCondition(
@@ -218,7 +232,9 @@ export class GithubDelivery {
         return record;
       }
       if (record.issue) return record;
-      const previous = record.operations.find((o) => o.kind === 'issue:create');
+      const previous = record.operations.find(
+        (o) => o.kind === 'issue:create' && o.status !== 'failed',
+      );
       if (previous) {
         requireCondition(
           this.reconcileIssue(record, client, previous),
@@ -240,6 +256,7 @@ export class GithubDelivery {
         record,
         op,
         () => {
+          assertRepositoryBinding(this.root, record.binding);
           client.createIssue(record.summary.title, op.body);
         },
         () => this.reconcileIssue(record, client, op),
@@ -260,6 +277,7 @@ export class GithubDelivery {
   }
   syncIssue(id: string, value: unknown): DeliveryRecord {
     return this.mutation(id, (record, client) => {
+      assertRepositoryBinding(this.root, record.binding);
       requireCondition(record.issue, 'Bind issue first');
       authorize(record, 'issue:update');
       const issue = client.issue(record.issue.number),
@@ -281,6 +299,7 @@ export class GithubDelivery {
         record,
         op,
         () => {
+          assertRepositoryBinding(this.root, record.binding);
           requireCondition(
             hash(client.issue(issue.number).body ?? '') === input.expectedBodyHash,
             'Concurrent issue edit detected',
@@ -304,7 +323,9 @@ export class GithubDelivery {
   push(id: string, resolution: 'full' | 'partial'): DeliveryRecord {
     return this.mutation(id, (record, client) => {
       preflight(this.root, record, resolution, 'push');
-      const priorPr = record.operations.find((op) => op.kind === 'pull-request:create');
+      const priorPr = record.operations.find(
+        (op) => op.kind === 'pull-request:create' && op.status !== 'failed',
+      );
       if (priorPr) {
         requireCondition(
           this.reconcilePr(record, client, priorPr, priorPr.resolution ?? 'partial'),
@@ -329,6 +350,7 @@ export class GithubDelivery {
         record,
         op,
         () => {
+          assertRepositoryBinding(this.root, record.binding);
           runGitCommand(this.root, [
             'push',
             '--',
@@ -345,19 +367,45 @@ export class GithubDelivery {
       return record;
     });
   }
-  private capturePr(record: DeliveryRecord, pr: RemotePr, resolution: 'full' | 'partial'): void {
-    requireCondition(
-      pr.base.repo.full_name.toLowerCase() === record.binding.repository.toLowerCase() &&
-        pr.base.ref === record.binding.base,
-      'PR repository or target mismatch',
-    );
+  private capturePr(
+    record: DeliveryRecord,
+    pr: RemotePr,
+    resolution: 'full' | 'partial',
+    expectedSha: string,
+  ): boolean {
+    const repository = record.binding.repository.toLowerCase();
+    const driftReason =
+      pr.base.repo.full_name.toLowerCase() !== repository
+        ? 'PR repository drifted from delivery binding'
+        : pr.base.ref !== record.binding.base
+          ? 'PR target branch drifted from delivery binding'
+          : pr.head.repo?.full_name.toLowerCase() !== repository
+            ? 'PR head repository drifted from delivery binding'
+            : pr.head.ref !== record.binding.head
+              ? 'PR head branch drifted from delivery binding'
+              : pr.head.sha !== expectedSha
+                ? 'PR HEAD drifted from the verified and reviewed delivery SHA'
+                : null;
     record.pr = {
       number: pr.number,
       url: pr.html_url,
       state: pr.merged_at ? 'merged' : pr.state === 'closed' ? 'closed-unmerged' : 'open',
-      sha: pr.head.sha,
+      sha: expectedSha,
+      observedSha: pr.head.sha,
+      drifted: driftReason !== null,
+      driftReason,
       resolution,
     };
+    return driftReason === null;
+  }
+  private deliveredPrSha(record: DeliveryRecord, number: number): string {
+    return (
+      record.operations.find(
+        (operation) => operation.kind === 'pull-request:create' && operation.remoteRef === number,
+      )?.head ??
+      record.pr?.sha ??
+      ''
+    );
   }
   private reconcilePr(
     record: DeliveryRecord,
@@ -371,18 +419,15 @@ export class GithubDelivery {
     requireCondition(matches.length <= 1, 'Multiple matching PRs; cannot reconcile');
     const pr = matches[0];
     if (!pr) return false;
-    this.capturePr(record, pr, resolution);
+    const matchesDelivery = this.capturePr(record, pr, resolution, op.head);
     op.remoteRef = pr.number;
     op.status = 'completed';
     this.store.save(record);
+    requireCondition(
+      matchesDelivery,
+      record.pr?.driftReason ?? 'PR drifted from the verified and reviewed delivery',
+    );
     if (!pr.merged_at && pr.state === 'open') {
-      requireCondition(
-        pr.base.ref === record.binding.base &&
-          pr.head.ref === record.binding.head &&
-          pr.head.repo?.full_name.toLowerCase() === record.binding.repository.toLowerCase() &&
-          pr.head.sha === op.head,
-        'PR exists but target or HEAD drifted; do not recreate',
-      );
       requireCondition(
         pr.body === op.body,
         'PR exists but body changed; inspect acceptance and issue relation before continuing',
@@ -400,7 +445,9 @@ export class GithubDelivery {
     provider?: (record: DeliveryRecord, body: string) => void,
   ): DeliveryRecord {
     return this.mutation(id, (record, client) => {
-      const prior = record.operations.find((o) => o.kind === 'pull-request:create');
+      const prior = record.operations.find(
+        (o) => o.kind === 'pull-request:create' && o.status !== 'failed',
+      );
       if (prior) {
         requireCondition(
           this.reconcilePr(
@@ -431,7 +478,8 @@ export class GithubDelivery {
             (p) =>
               p.state === 'open' &&
               p.head.ref === record.binding.head &&
-              p.base.ref === record.binding.base,
+              p.base.ref === record.binding.base &&
+              p.head.repo?.full_name.toLowerCase() === record.binding.repository.toLowerCase(),
           ),
         'An existing PR needs explicit reconciliation; will not create duplicate',
       );
@@ -444,6 +492,7 @@ export class GithubDelivery {
         record,
         op,
         () => {
+          assertRepositoryBinding(this.root, record.binding);
           assertPushed(this.root, record);
           if (provider) provider(record, op.body);
           else
@@ -461,7 +510,9 @@ export class GithubDelivery {
   }
   observe(id: string): DeliveryRecord {
     return this.mutation(id, (record, client) => {
-      for (const op of record.operations.filter((o) => o.status !== 'completed')) {
+      for (const op of record.operations.filter(
+        (o) => o.status === 'prepared' || o.status === 'uncertain',
+      )) {
         if (op.kind === 'issue:create') this.reconcileIssue(record, client, op);
         else if (op.kind === 'pull-request:create')
           this.reconcilePr(record, client, op, op.resolution ?? 'partial');
@@ -479,10 +530,17 @@ export class GithubDelivery {
           }
         }
       }
-      if (record.pr) this.capturePr(record, client.pr(record.pr.number), record.pr.resolution);
+      if (record.pr)
+        this.capturePr(
+          record,
+          client.pr(record.pr.number),
+          record.pr.resolution,
+          this.deliveredPrSha(record, record.pr.number),
+        );
       if (record.issue) this.bindIssue(record, client.issue(record.issue.number));
-      record.issueClosure =
-        record.pr?.resolution === 'partial'
+      record.issueClosure = record.pr?.drifted
+        ? 'pending'
+        : record.pr?.resolution === 'partial'
           ? 'not-applicable'
           : record.pr?.state === 'merged' && record.issue?.state === 'closed'
             ? 'closed'

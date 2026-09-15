@@ -359,18 +359,26 @@ describe('GitHub delivery contracts', () => {
       expect(client.prWrites).toBe(1);
     },
   );
-  it('preserves safe write failure diagnostics while preventing blind retries', () => {
+  it('records deterministic write failures as retryable after the prerequisite is fixed', () => {
     const r = bind();
     grantAll(r);
-    vi.spyOn(client, 'createIssue').mockImplementation(() => {
-      throw new GithubOperationError('permission-denied: GitHub operation failed');
+    const create = vi.spyOn(client, 'createIssue').mockImplementationOnce(() => {
+      throw new GithubOperationError(
+        'permission-denied',
+        'permission-denied: GitHub operation failed',
+      );
     });
     expect(() => service.issue(r.id)).toThrow('permission-denied');
-    expect(service.store.read(r.id).operations[0].status).toBe('uncertain');
-    expect(() => service.issue(r.id)).toThrow('uncertain');
-    expect(client.createIssue).toHaveBeenCalledTimes(1);
+    expect(service.store.read(r.id).operations[0].status).toBe('failed');
+    const recovered = service.issue(r.id);
+    expect(recovered.issue?.number).toBe(1);
+    expect(recovered.operations.map((operation) => operation.status)).toEqual([
+      'failed',
+      'completed',
+    ]);
+    expect(create).toHaveBeenCalledTimes(2);
   });
-  it('does not report closure when a merged PR was retargeted', () => {
+  it('records a merged PR target drift without reporting issue closure', () => {
     const r = ready();
     service.push(r.id, 'full');
     service.pr(r.id, 'full');
@@ -378,8 +386,31 @@ describe('GitHub delivery contracts', () => {
     client.prRows[0].merged_at = new Date().toISOString();
     client.prRows[0].state = 'closed';
     client.issueRows[0].state = 'closed';
-    expect(() => service.observe(r.id)).toThrow('target mismatch');
-    expect(service.store.read(r.id).issueClosure).toBe('pending');
+    const result = service.observe(r.id);
+    expect(result.pr?.drifted).toBe(true);
+    expect(result.pr?.driftReason).toContain('target branch');
+    expect(result.issueClosure).toBe('pending');
+  });
+  it('keeps the reviewed delivery SHA when an appended commit is merged', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    const created = service.pr(r.id, 'full');
+    const deliveredSha = created.pr!.sha;
+    const appendedSha = 'b'.repeat(40);
+    client.prRows[0].head.sha = appendedSha;
+    client.prRows[0].merged_at = new Date().toISOString();
+    client.prRows[0].state = 'closed';
+    client.issueRows[0].state = 'closed';
+    const result = service.observe(r.id);
+    expect(result.pr).toMatchObject({
+      state: 'merged',
+      sha: deliveredSha,
+      observedSha: appendedSha,
+      drifted: true,
+    });
+    expect(result.pr?.driftReason).toContain('verified and reviewed');
+    expect(result.issueClosure).toBe('pending');
+    expect(() => service.check(r.id, 'full')).toThrow('verified and reviewed');
   });
   it('records merged and issue closed as separate observations', () => {
     const r = ready();
@@ -397,6 +428,44 @@ describe('GitHub delivery contracts', () => {
     expect(() => service.push(r.id, 'full')).toThrow('remote');
     command('remote', 'set-url', 'origin', 'https://github.com/acme/test.git');
     expect(() => service.pr(r.id, 'full')).toThrow('Remote branch');
+  });
+  it('validates repository binding before issue create and update access', () => {
+    command('remote', 'set-url', 'origin', 'https://github.com/other/repo.git');
+    expect(() => bind()).toThrow('remote');
+    expect(client.issueWrites).toBe(0);
+
+    command('remote', 'set-url', 'origin', 'https://github.com/acme/test.git');
+    const r = bind();
+    grantAll(r);
+    command('remote', 'set-url', 'origin', 'https://github.com/other/repo.git');
+    expect(() => service.issue(r.id)).toThrow('remote');
+    expect(client.issueWrites).toBe(0);
+    command('remote', 'set-url', 'origin', 'https://github.com/acme/test.git');
+    service.issue(r.id);
+    service.local(r.id, 'grant', { action: 'issue:update', source: 'user:sync' });
+    const writes = client.issueWrites;
+    command('remote', 'set-url', 'origin', 'https://github.com/other/repo.git');
+    expect(() => service.syncIssue(r.id, { expectedBodyHash: hash(client.issue(1).body) })).toThrow(
+      'remote',
+    );
+    expect(client.issueWrites).toBe(writes);
+  });
+  it('does not let a fork PR with the same branch name block same-repository creation', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    client.prRows.push({
+      number: 99,
+      html_url: 'https://github.com/acme/test/pull/99',
+      state: 'open',
+      body: 'fork pull request',
+      merged_at: null,
+      base: { ref: 'main', repo: { full_name: 'acme/test' } },
+      head: { ref: 'codex/delivery', sha: currentHead(), repo: { full_name: 'fork/test' } },
+    });
+    const result = service.pr(r.id, 'full');
+    expect(client.prWrites).toBe(1);
+    expect(result.pr?.number).not.toBe(99);
+    expect(result.pr?.drifted).toBe(false);
   });
   it('keeps prepared journals on disk before creating a remote object', () => {
     const r = ready();

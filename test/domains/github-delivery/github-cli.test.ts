@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const external = vi.hoisted(() => ({ runExternalCommand: vi.fn() }));
 vi.mock('../../../platform/process/external-command.js', () => external);
-import { GithubCli } from '../../../domains/github-delivery/github-cli.js';
+import { GithubCli, GithubOperationError } from '../../../domains/github-delivery/github-cli.js';
 const issue = {
   number: 1,
   html_url: 'https://github.com/acme/test/issues/1',
@@ -49,23 +49,28 @@ describe('GitHub CLI boundary', () => {
     expect(existsSync(bodyFile)).toBe(false);
   });
   it.each([
-    [{ cause: { code: 'ENOENT' } }, 'gh-missing'],
-    [{ stderr: 'run gh auth login' }, 'unauthenticated'],
-    [{ stderr: 'HTTP 403 secret-test-token' }, 'permission-denied'],
-    [{ stderr: 'HTTP 404' }, 'repository-unavailable'],
-    [{ stderr: 'network unavailable' }, 'remote-uncertain'],
-  ])('reports safe actionable errors without echoing subprocess secrets', (failure, kind) => {
-    external.runExternalCommand.mockImplementation(() => {
-      throw Object.assign(new Error('private'), failure);
-    });
-    try {
-      new GithubCli('.', 'acme/test').issue(1);
-      throw new Error('expected failure');
-    } catch (error) {
-      expect((error as Error).message).toContain(kind);
-      expect((error as Error).message).not.toContain('secret-test-token');
-    }
-  });
+    [{ cause: { code: 'ENOENT' } }, 'gh-missing', true],
+    [{ stderr: 'run gh auth login' }, 'unauthenticated', true],
+    [{ stderr: 'HTTP 403 secret-test-token' }, 'permission-denied', true],
+    [{ stderr: 'HTTP 404' }, 'repository-unavailable', true],
+    [{ stderr: 'network unavailable' }, 'remote-uncertain', false],
+  ])(
+    'reports safe actionable errors without echoing subprocess secrets',
+    (failure, kind, definitelyNotApplied) => {
+      external.runExternalCommand.mockImplementation(() => {
+        throw Object.assign(new Error('private'), failure);
+      });
+      try {
+        new GithubCli('.', 'acme/test').issue(1);
+        throw new Error('expected failure');
+      } catch (error) {
+        expect((error as Error).message).toContain(kind);
+        expect((error as Error).message).not.toContain('secret-test-token');
+        expect(error).toBeInstanceOf(GithubOperationError);
+        expect((error as GithubOperationError).definitelyNotApplied).toBe(definitelyNotApplied);
+      }
+    },
+  );
   it('rejects malformed pagination rather than treating it as an empty result', () => {
     external.runExternalCommand.mockReturnValue('{"message":"incomplete"}');
     expect(() => new GithubCli('.', 'acme/test').prs()).toThrow('paginated');
