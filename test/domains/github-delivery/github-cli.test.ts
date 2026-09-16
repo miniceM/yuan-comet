@@ -48,6 +48,18 @@ describe('GitHub CLI boundary', () => {
     new GithubCli('.', 'acme/test').createPr('Title', body, 'main', 'codex/task');
     expect(existsSync(bodyFile)).toBe(false);
   });
+  it('updates a specific pull request body through the same private body-file boundary', () => {
+    let bodyFile = '';
+    external.runExternalCommand.mockImplementation((command: string, args: string[]) => {
+      expect(command).toBe('gh');
+      expect(args.slice(0, 3)).toEqual(['pr', 'edit', '7']);
+      bodyFile = args[args.indexOf('--body-file') + 1];
+      expect(readFileSync(bodyFile, 'utf8')).toBe('final reviewed evidence');
+      return '';
+    });
+    new GithubCli('.', 'acme/test').updatePr(7, 'final reviewed evidence');
+    expect(existsSync(bodyFile)).toBe(false);
+  });
   it.each([
     [{ cause: { code: 'ENOENT' } }, 'gh-missing', true],
     [{ stderr: 'run gh auth login' }, 'unauthenticated', true],

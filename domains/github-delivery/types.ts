@@ -69,7 +69,7 @@ export interface RemotePr extends RemoteIssue {
 }
 export interface Operation {
   id: string;
-  kind: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create';
+  kind: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create' | 'pull-request:update';
   status: 'prepared' | 'completed' | 'uncertain' | 'failed';
   head: string;
   body: string;

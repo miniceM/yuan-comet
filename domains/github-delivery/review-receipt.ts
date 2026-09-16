@@ -136,9 +136,18 @@ export function recordReview(root: string, record: DeliveryRecord, value: unknow
       historicalFindings.set(f.id, f);
       if (f.resolved) resolvedIds.add(f.id);
     }
-    for (const resId of prev.resolves ?? []) {
-      resolvedIds.add(resId);
-    }
+  }
+  // Only resolutions inherited by the chain being extended remain effective. An
+  // abandoned review branch is audit history, not a permanent claim on a finding ID.
+  let ancestor = parent;
+  const ancestorIds = new Set<string>();
+  while (ancestor) {
+    requireCondition(!ancestorIds.has(ancestor.id), 'Cyclic review chain');
+    ancestorIds.add(ancestor.id);
+    for (const resId of ancestor.resolves ?? []) resolvedIds.add(resId);
+    if (ancestor.kind === 'full') break;
+    ancestor = record.reviews.find((review) => review.id === ancestor!.parent);
+    requireCondition(ancestor, 'Broken review coverage chain');
   }
   for (const resId of resolves) {
     requireCondition(historicalFindings.has(resId), `Cannot resolve unknown finding ID: ${resId}`);

@@ -28,6 +28,7 @@ class FakeGithub implements GithubClient {
   prRows: RemotePr[] = [];
   issueWrites = 0;
   prWrites = 0;
+  prUpdates = 0;
   loseResponse = false;
   failBeforeCreate = false;
   issue(number: number) {
@@ -86,6 +87,13 @@ class FakeGithub implements GithubClient {
     });
     if (this.loseResponse) throw new Error('response lost');
     return this.prRows.at(-1)!.html_url;
+  }
+  updatePr(number: number, body: string) {
+    this.prUpdates++;
+    const row = this.prRows.find((pr) => pr.number === number);
+    if (!row) throw new Error('404');
+    row.body = body;
+    if (this.loseResponse) throw new Error('response lost');
   }
 }
 let root: string,
@@ -832,11 +840,56 @@ describe('GitHub delivery contracts', () => {
     expect(pushed.pr?.sha).toBe(secondSha);
     expect(pushed.pr?.drifted).toBe(false);
 
+    // Re-running PR delivery refreshes the body for the final reviewed commit.
+    client.loseResponse = true;
+    const updated = service.pr(r.id, 'full');
+    expect(updated.pr?.sha).toBe(secondSha);
+    expect(client.prUpdates).toBe(1);
+    expect(client.prRows[0].body).toContain(`Local evidence recorded for ${secondSha}.`);
+    expect(client.prRows[0].body).toContain('delta:');
+    expect(
+      updated.operations.some(
+        (operation) => operation.kind === 'pull-request:update' && operation.status === 'completed',
+      ),
+    ).toBe(true);
+    service.pr(r.id, 'full');
+    expect(client.prUpdates).toBe(1);
+
     // Observe reflects open PR with updated SHA and no drift
     const observed = service.observe(r.id);
     expect(observed.pr?.state).toBe('open');
     expect(observed.pr?.sha).toBe(secondSha);
     expect(observed.pr?.drifted).toBe(false);
+  });
+  it('recovers an uncertain PR body update through observe without repeating the write', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    service.pr(r.id, 'full');
+    writeFileSync(path.join(root, 'follow-up.txt'), 'follow-up');
+    command('add', '.');
+    command('commit', '-qm', 'follow-up');
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+    });
+    service.push(r.id, 'full');
+    const update = vi.spyOn(client, 'updatePr').mockImplementationOnce(() => {
+      throw new Error('network unavailable');
+    });
+    expect(() => service.pr(r.id, 'full')).toThrow('not yet observable');
+    const uncertain = service.store
+      .read(r.id)
+      .operations.find((operation) => operation.kind === 'pull-request:update');
+    expect(uncertain?.status).toBe('uncertain');
+
+    client.prRows[0].body = uncertain!.body;
+    const observed = service.observe(r.id);
+    expect(observed.operations.find((operation) => operation.id === uncertain!.id)?.status).toBe(
+      'completed',
+    );
+    expect(update).toHaveBeenCalledTimes(1);
   });
   it('allows creating a replacement PR after a prior PR was closed-unmerged', () => {
     const r = ready();
@@ -936,5 +989,15 @@ describe('GitHub delivery contracts', () => {
     // Since the resolving review is NOT on the active chain of the latest review,
     // the critical finding vuln-1 must still block preflight!
     expect(() => service.check(r.id, 'full')).toThrow('Unresolved review findings');
+
+    // The stale resolution remains audit history but cannot prevent the active chain
+    // from explicitly resolving the same stable finding ID and recovering delivery.
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+      resolves: ['vuln-1'],
+    });
+    expect(() => service.check(r.id, 'full')).not.toThrow();
   });
 });

@@ -12,6 +12,7 @@ export interface GithubClient {
   createIssue(title: string, body: string): string;
   updateIssue(number: number, body: string): void;
   createPr(title: string, body: string, base: string, head: string): string;
+  updatePr(number: number, body: string): void;
 }
 export type GithubFailureKind =
   | 'gh-missing'
@@ -162,5 +163,8 @@ export class GithubCli implements GithubClient {
       ['pr', 'create', '--title', title, '--base', base, '--head', head],
       body,
     );
+  }
+  updatePr(number: number, body: string): void {
+    this.bodyCommand(['pr', 'edit', String(number)], body);
   }
 }

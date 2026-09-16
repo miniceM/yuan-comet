@@ -351,7 +351,10 @@ export class GithubDelivery {
         .find((op) => op.kind === 'pull-request:create' && op.status !== 'failed');
       if (priorPr) {
         requireCondition(
-          this.reconcilePr(record, client, priorPr, priorPr.resolution ?? 'partial', true),
+          this.reconcilePr(record, client, priorPr, priorPr.resolution ?? 'partial', {
+            forPush: true,
+            requirePreparedBody: false,
+          }),
           'PR create is uncertain; observe before any push',
         );
         requireCondition(
@@ -453,7 +456,7 @@ export class GithubDelivery {
     client: GithubClient,
     op: Operation,
     resolution: 'full' | 'partial',
-    forPush = false,
+    options: { forPush?: boolean; requirePreparedBody?: boolean } = {},
   ): boolean {
     const matches = op.remoteRef
       ? [client.pr(op.remoteRef)]
@@ -474,11 +477,12 @@ export class GithubDelivery {
       record.pr?.driftReason ?? 'PR drifted from the verified and reviewed delivery',
     );
     if (!pr.merged_at && pr.state === 'open') {
-      requireCondition(
-        pr.body === op.body,
-        'PR exists but body changed; inspect acceptance and issue relation before continuing',
-      );
-      if (!forPush) {
+      if (options.requirePreparedBody !== false)
+        requireCondition(
+          pr.body === op.body,
+          'PR exists but body changed; inspect acceptance and issue relation before continuing',
+        );
+      if (!options.forPush) {
         requireCondition(
           pr.head.sha === expectedSha,
           'Existing PR does not deliver current verified push HEAD',
@@ -487,12 +491,88 @@ export class GithubDelivery {
     }
     return true;
   }
+  private latestPrBodyOperation(record: DeliveryRecord, number: number): Operation | undefined {
+    return record.operations
+      .slice()
+      .reverse()
+      .find(
+        (operation) =>
+          (operation.kind === 'pull-request:create' || operation.kind === 'pull-request:update') &&
+          operation.remoteRef === number &&
+          operation.status !== 'failed',
+      );
+  }
+  private reconcilePrUpdate(record: DeliveryRecord, client: GithubClient, op: Operation): boolean {
+    requireCondition(op.remoteRef, 'PR update operation is missing its remote reference');
+    const pr = client.pr(op.remoteRef);
+    const matchesDelivery = this.capturePr(
+      record,
+      pr,
+      op.resolution ?? record.pr?.resolution ?? 'partial',
+      op.head,
+    );
+    requireCondition(
+      matchesDelivery,
+      record.pr?.driftReason ?? 'PR drifted from the verified and reviewed delivery',
+    );
+    if (pr.body !== op.body) return false;
+    op.status = 'completed';
+    this.store.save(record);
+    return true;
+  }
+  private updateOpenPr(
+    record: DeliveryRecord,
+    client: GithubClient,
+    resolution: 'full' | 'partial',
+  ): void {
+    requireCondition(record.pr?.state === 'open', 'Only an open PR can be updated');
+    assertPushed(this.root, record);
+    const remote = client.pr(record.pr.number);
+    requireCondition(
+      this.capturePr(record, remote, resolution, head(this.root)),
+      record.pr.driftReason ?? 'PR drifted from the verified and reviewed delivery',
+    );
+    const previous = this.latestPrBodyOperation(record, remote.number);
+    requireCondition(previous, 'Missing PR body operation history');
+    const currentBody = prBody(record, previous.id, resolution);
+    if (remote.body === currentBody) return;
+    const op = this.prepared(record, 'pull-request:update', (operation) =>
+      prBody(record, operation, resolution),
+    );
+    op.remoteRef = remote.number;
+    op.resolution = resolution;
+    this.store.save(record);
+    this.execute(
+      record,
+      op,
+      () => {
+        assertRepositoryBinding(this.root, record.binding);
+        preflight(this.root, record, resolution);
+        assertPushed(this.root, record);
+        client.updatePr(remote.number, op.body);
+      },
+      () => this.reconcilePrUpdate(record, client, op),
+    );
+  }
   pr(
     id: string,
     resolution: 'full' | 'partial',
     provider?: (record: DeliveryRecord, body: string) => void,
   ): DeliveryRecord {
     return this.mutation(id, (record, client) => {
+      const pendingUpdate = record.operations
+        .slice()
+        .reverse()
+        .find(
+          (operation) =>
+            operation.kind === 'pull-request:update' &&
+            (operation.status === 'prepared' || operation.status === 'uncertain'),
+        );
+      if (pendingUpdate)
+        requireCondition(
+          this.reconcilePrUpdate(record, client, pendingUpdate),
+          'PR update is uncertain; use observe before retrying',
+        );
       const prior = record.operations
         .slice()
         .reverse()
@@ -504,11 +584,13 @@ export class GithubDelivery {
             client,
             prior,
             prior.resolution ?? record.pr?.resolution ?? resolution,
+            { requirePreparedBody: false },
           ),
           'PR create uncertain; observe only',
         );
         if (record.pr?.state === 'open') {
           preflight(this.root, record, prior.resolution ?? resolution);
+          this.updateOpenPr(record, client, resolution);
           return record;
         }
         if (record.pr?.state === 'merged') {
@@ -573,6 +655,7 @@ export class GithubDelivery {
         if (op.kind === 'issue:create') this.reconcileIssue(record, client, op);
         else if (op.kind === 'pull-request:create')
           this.reconcilePr(record, client, op, op.resolution ?? 'partial');
+        else if (op.kind === 'pull-request:update') this.reconcilePrUpdate(record, client, op);
         else if (op.kind === 'issue:update' && op.remoteRef) {
           const issue = client.issue(op.remoteRef);
           if (issue.body === op.body) {
