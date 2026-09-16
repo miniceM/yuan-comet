@@ -5,6 +5,10 @@ description: 'Phase 2 of Comet Classic — produce the deep technical Design Doc
 
 # Comet Phase 2: Deep Design (Design)
 
+## GitHub delivery integration
+
+When design changes acceptance scope for a GitHub-bound change, follow `comet-classic/reference/github-delivery.md` to synchronize scope and issue; preserve confirmation references and stable AC keys.
+
 Before starting or recovering, read and follow `comet-classic/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
 
 ## Prerequisites

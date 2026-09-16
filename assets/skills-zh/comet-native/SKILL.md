@@ -5,7 +5,7 @@ description: "Comet Native 工作流。当用户明确调用 /comet-native、要
 
 # Comet Native
 
-Native 把需求、完整目标规格、当前进度和验收结论保存在项目中。每完成一个阶段都回到 Runtime 读取下一步，当前只处理 Runtime 指定的阶段。CLI 文本先给出面向用户的 `summary` 和唯一 `NEXT:`；需要稳定解析时使用 `--json` 读取新增的 `summary`/`next`/`user_message` Envelope，只有排查机器状态才使用 `--verbose`，并在等待用户决定前先转述 `userCommunication`。
+Native 把需求、完整目标规格、当前进度和验收结论保存在项目中。每完成一个阶段都回到 Runtime 读取下一步，当前只处理 Runtime 指定的阶段。CLI 文本先给出面向用户的 `summary` 和唯一 `NEXT:`；需要稳定解析时使用 `--json` 读取新增的 `summary`/`next`/`user_message` Envelope，只有排查机器状态才使用 `--verbose`，并在等待用户决定前先转述 `userCommunication`。 用户要求 GitHub issue/PR 交付时，读取 `reference/github-delivery.md`；已绑定交付的最终证据由 Runtime 检查，归档不代表 PR 已创建或合并。
 ## 硬性边界
 - 磁盘中的 `.comet/config.yaml`、当前 change、`comet-state.yaml` 和正式产物是工作依据，聊天记忆只作辅助。
 - Runtime 管理工作流状态、本机执行状态、日志、锁和事务；所有阶段推进都通过 PATH 中公开的 `comet native` 命令完成，用户不手工执行这些命令。

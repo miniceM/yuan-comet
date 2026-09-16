@@ -1,3 +1,4 @@
+import { pushWorkflowDelivery } from '../github-delivery/workflow-adapter.js';
 import { accessSync, constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -512,12 +513,19 @@ export async function finishArchivedNativeWorkspace(options: {
 
     if (options.plan.finish === 'keep') return result;
     if (options.plan.finish === 'push' || options.plan.finish === 'pull-request') {
-      runGitCommand(options.plan.changeRoot, [
-        'push',
-        '--set-upstream',
-        options.plan.remote!,
-        options.plan.changeBranch,
-      ]);
+      const delivered = pushWorkflowDelivery(options.plan.changeRoot, 'native', options.name, {
+        base: options.plan.targetBranch,
+        head: options.plan.changeBranch,
+        remote: options.plan.remote!,
+      });
+      if (!delivered) {
+        runGitCommand(options.plan.changeRoot, [
+          'push',
+          '--set-upstream',
+          options.plan.remote!,
+          options.plan.changeBranch,
+        ]);
+      }
       result.pushed = true;
       if (options.plan.finish === 'pull-request') {
         result.pullRequest = finishNativePullRequest({

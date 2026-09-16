@@ -5,6 +5,10 @@ description: 'Phase 1 of Comet Classic — open an OpenSpec change and stand up 
 
 # Comet Phase 1: Open
 
+## GitHub delivery integration
+
+After requirements are clear and formal proposal/spec artifacts exist, follow `comet-classic/reference/github-delivery.md` when the user requests GitHub delivery: bind delivery and create or reuse an issue, preserving the complete acceptance scope and existing authorization.
+
 Before starting or recovering, read and follow `comet-classic/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
 
 ## Prerequisites

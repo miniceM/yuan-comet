@@ -96,6 +96,39 @@ program
     await cometTaskCommand(targetPath, options);
   });
 
+const delivery = program
+  .command('delivery')
+  .description('Track GitHub issues, acceptance evidence and reviewed PR delivery');
+for (const action of [
+  'bind',
+  'list',
+  'status',
+  'scope',
+  'grant',
+  'issue',
+  'sync-issue',
+  'inspect-issue',
+  'verify',
+  'carry',
+  'review',
+  'preflight',
+  'push',
+  'pr',
+  'observe',
+]) {
+  delivery
+    .command(action)
+    .option('--path <path>', 'Project worktree', '.')
+    .option('--id <id>', 'Persistent delivery identifier')
+    .option('--input <file>', 'JSON input file; see GitHub delivery guide')
+    .option('--resolution <resolution>', 'full or partial issue resolution', 'full')
+    .option('--json', 'Output as JSON (always enabled for delivery)')
+    .action(async (options) => {
+      const { githubDeliveryCommand } = await import('../commands/github-delivery.js');
+      await githubDeliveryCommand(action, options);
+    });
+}
+
 const workflow = program.command('workflow').description('Resolve the configured Comet workflow');
 
 workflow

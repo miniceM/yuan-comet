@@ -5,6 +5,10 @@ description: 'Comet Classic 阶段 1 —— 开启 OpenSpec change 并建立 pro
 
 # Comet 阶段 1：开启（Open）
 
+## GitHub 交付接入
+
+需求明确并形成正式 proposal/spec 后，用户要求 GitHub 交付时，按 `comet-classic/reference/github-delivery.md` 绑定交付并创建或复用 issue；保留完整验收范围和已有授权。
+
 开始或恢复前必须先读取并执行 `comet-classic/reference/classic-layout.md`；本文件中的 OpenSpec CLI 调用必须使用 adapter，文件路径必须使用该协议绑定的 `<classic-*>` 逻辑根。
 
 ## 前置条件

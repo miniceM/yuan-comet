@@ -67,6 +67,7 @@
 - **配置驱动的统一入口** — `/comet` 只读取项目的 `.comet/config.yaml`，确定性转发到 `/comet-native` 或 `/comet-classic`。它不按任务大小猜工作流，也不混用两边的 change、状态和目录。`comet resume-probe` 使用同一配置恢复正确的永久入口。
 - **Claude Code 与 OpenCode 本地 Enterprise Guard** — `comet init` 与 `comet update` 为 Claude Code 安装单一受管 `PreToolUse` Gateway，为 OpenCode 安装受管插件桥和 Runner，在 Comet 工作流路由之前检查高风险写入、凭据、递归删除和强制推送，并在策略或审计不可用时拒绝执行。由于同级 Hook/插件并行且互相不可见，当前覆盖属于尽力阻断并继续要求 CI 兜底；详见[平台覆盖能力报告](docs/architecture/enterprise-guard/platform-coverage.md)。
 - **Skill 平台** — Comet能够编写可复用 Skill 包，并通过 `/comet-any` 把它们整理成可分发 Bundle，你制作的Skill可以像如comet init一样一键分发到所有Coding平台。
+- **GitHub 交付追踪** — 可选的 `comet delivery` 将需求关联到 GitHub issue、稳定验收证据、已审查提交和可恢复 PR。详见 [GitHub 交付指南](docs/github-delivery-implementation-report.md)。
 - **Eval 平台**— Comet基于科学的Rubric、Pass@k、Pass^k评分评估你的Skill，让Skill演进是基于科学依据，而不是依靠感觉，支持接入LangSmith评估，让评估真实走进企业级生产环境。基于双Agent架构自动化在你的生产环境完成评估工作
 
 ## Supervisor Change：让多个 Agent 协同交付复杂目标

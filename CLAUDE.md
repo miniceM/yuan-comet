@@ -370,3 +370,7 @@ Changelog写英文
 ## Comet Dashboard规范
 
 Comet Dashboard实现时尽量采用使用AntD React组件
+
+## GitHub 交付模块
+
+`domains/github-delivery/` 独立管理 issue、稳定验收编号、验证和 review 证据、授权与 PR 恢复。`comet delivery` 是共享入口；可变记录位于 Git common directory，不写入 workflow 状态或提交。Classic/Native 只通过公开接口接线，共享模块不得反向依赖两套工作流。测试归属 `test/domains/github-delivery/`。

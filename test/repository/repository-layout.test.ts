@@ -92,6 +92,7 @@ describe('repository layout registry', () => {
       'enterprise-guard',
       'eval',
       'factory',
+      'github-delivery',
       'integrations',
       'project-knowledge',
       'skill',

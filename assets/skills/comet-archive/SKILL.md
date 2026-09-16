@@ -5,6 +5,10 @@ description: "Phase 5 of Comet Classic — confirm archive, merge delta specs, a
 
 # Comet Phase 5: Archive (Archive)
 
+## GitHub delivery integration
+
+For a GitHub-bound change, follow `comet-classic/reference/github-delivery.md`: cover the archive commit with verification and review, then use delivery push/pr instead of direct push/PR creation. Recover through delivery observe without repeating archive.
+
 Before starting or recovering, read and follow `comet-classic/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
 
 ## Prerequisites

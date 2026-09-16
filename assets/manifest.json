@@ -16,6 +16,7 @@
     "comet-classic/reference/intent-frame.md",
     "comet-classic/reference/scripts.md",
     "comet-classic/reference/subagent-dispatch.md",
+    "comet-classic/reference/github-delivery.md",
     "comet-classic/reference/workspace.md",
     "comet-review/SKILL.md",
     "comet-review/agents/openai.yaml",
@@ -54,6 +55,7 @@
     "comet-native/reference/clarification.md",
     "comet-native/reference/commands.md",
     "comet-native/reference/recovery.md",
+    "comet-native/reference/github-delivery.md",
     "comet-native/reference/workspace.md",
     "comet-native/scripts/comet-native-runtime.mjs",
     "comet-native/scripts/comet-native-hook-guard.mjs",
@@ -97,7 +99,17 @@
     }
   },
   "languages": [
-    { "id": "en", "name": "English", "skillsDir": "skills", "artifactLanguage": "en" },
-    { "id": "zh", "name": "中文", "skillsDir": "skills-zh", "artifactLanguage": "zh-CN" }
+    {
+      "id": "en",
+      "name": "English",
+      "skillsDir": "skills",
+      "artifactLanguage": "en"
+    },
+    {
+      "id": "zh",
+      "name": "中文",
+      "skillsDir": "skills-zh",
+      "artifactLanguage": "zh-CN"
+    }
   ]
 }

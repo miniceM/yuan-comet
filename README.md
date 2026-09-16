@@ -68,6 +68,8 @@ It allows you to use a toolchain to handle everything from requirements to archi
 - **Local Enterprise Guard for Claude Code and OpenCode** — `comet init` and `comet update` install one managed `PreToolUse` Gateway for Claude Code and a managed plugin bridge with Runner for OpenCode. Both check high-risk writes, credentials, recursive deletion, and force pushes before Comet workflow routing, and deny execution when policy evaluation or required audit persistence is unavailable. Because peer Hooks/plugins run in parallel without observing one another, coverage remains best-effort with CI fallback; see the [platform coverage report](docs/architecture/enterprise-guard/platform-coverage.md).
 - **Skill platform** — Comet can author reusable Skill packages and use `/comet-any` to organize them into distributable
   Bundles, so Skills you create can be distributed to coding platforms with one command, much like `comet init`.
+- **GitHub delivery tracking** — Opt-in `comet delivery` binds requirements to GitHub issues, stable acceptance evidence,
+  reviewed commits, and recoverable pull requests. See the [GitHub delivery guide](docs/github-delivery-implementation-report.md).
 - **Eval platform** — Comet assesses your skills using scientific Rubric, Pass@k, and Pass^k scoring, ensuring skill evolution is based on scientific evidence rather than intuition. It supports integration with LangSmith assessments, bringing evaluation to real-world enterprise production environments. Its dual-agent architecture automates the assessment process in your production environment.
 
 ## Supervisor Change: coordinated delivery across multiple agents

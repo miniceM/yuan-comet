@@ -5,7 +5,7 @@ description: "Comet Native workflow. Use when the user explicitly invokes /comet
 
 # Comet Native
 
-Native stores the requirements, complete target specifications, current progress, and verification conclusions in the project. After completing each phase, return to the Runtime for the next action and handle only the phase it specifies. CLI text starts with a user-facing `summary` and one `NEXT:` step; use `--json` for the additive `summary`/`next`/`user_message` envelope and `--verbose` only for machine-state troubleshooting, and relay `userCommunication` before waiting for a required user decision.
+Native stores the requirements, complete target specifications, current progress, and verification conclusions in the project. After completing each phase, return to the Runtime for the next action and handle only the phase it specifies. CLI text starts with a user-facing `summary` and one `NEXT:` step; use `--json` for the additive `summary`/`next`/`user_message` envelope and `--verbose` only for machine-state troubleshooting, and relay `userCommunication` before waiting for a required user decision. When the user requests GitHub issue/PR delivery, read `reference/github-delivery.md`; Runtime checks final evidence for bound delivery, and archive does not mean a PR was created or merged.
 ## Inviolable boundaries
 - The on-disk `.comet/config.yaml`, current change, `comet-state.yaml`, and formal artifacts are the working source; chat memory is only supplementary.
 - The Runtime manages workflow state, local execution state, logs, locks, and transactions. Advance every phase through the public `comet native` commands on PATH; users do not run these commands manually.

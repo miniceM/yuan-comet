@@ -1,3 +1,4 @@
+import { findWorkflowDelivery } from '../github-delivery/workflow-adapter.js';
 import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -650,6 +651,13 @@ export const classicArchiveCommand: ClassicCommandHandler = async (args) => {
     }
 
     if (!dryRun) await clearCurrentChangeIf(layout.projectRoot, change);
+    if (!dryRun) {
+      const delivery = findWorkflowDelivery(layout.projectRoot, 'classic', change);
+      if (delivery)
+        output.stderr.push(
+          `GitHub delivery ${delivery.id}: local archive complete; record final verification/review, then use comet delivery preflight/push/pr --id ${delivery.id}. PR/merge are separate states.`,
+        );
+    }
 
     output.stderr.push('');
     output.finishEnvelope({ name: change, dryRun, locale: classicLocale(classic.language) });

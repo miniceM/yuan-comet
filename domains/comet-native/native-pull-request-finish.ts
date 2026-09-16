@@ -1,3 +1,4 @@
+import { finishWorkflowDelivery } from '../github-delivery/workflow-adapter.js';
 import { runExternalCommand } from '../../platform/process/external-command.js';
 import type { WorkflowNativePullRequestFinishConfig } from '../workflow-contract/types.js';
 
@@ -13,7 +14,7 @@ export interface NativePullRequestRecord {
 }
 
 export interface NativePullRequestFinishOutcome {
-  provider: 'github-fill' | 'repository-command';
+  provider: 'github-fill' | 'github-cli' | 'repository-command';
   disposition: 'created' | 'reused';
   pullRequest: NativePullRequestRecord;
   remoteVerified: true;
@@ -413,6 +414,52 @@ export function finishNativePullRequest(options: {
   headSha: string;
   config: WorkflowNativePullRequestFinishConfig | null;
 }): NativePullRequestFinishOutcome {
+  const delivery = finishWorkflowDelivery(
+    options.projectRoot,
+    'native',
+    options.changeName,
+    options.config
+      ? (record, body) => {
+          const [command, ...args] = options.config!.command;
+          runExternalCommand(command, args, {
+            cwd: options.projectRoot,
+            timeoutMs: options.config!.timeout_ms,
+            input: JSON.stringify({
+              ...JSON.parse(providerInput({ ...options, existingPullRequest: null })),
+              delivery: {
+                schema: 'comet.github-delivery.provider.v1',
+                repository: record.binding.repository,
+                base: record.binding.base,
+                head: record.binding.head,
+                headSha: options.headSha,
+                title: record.summary.title,
+                body,
+              },
+            }),
+          });
+        }
+      : undefined,
+    { base: options.baseBranch, head: options.headBranch, remote: options.remote },
+  );
+  if (delivery?.pr) {
+    if (delivery.pr.state !== 'open')
+      throw new Error(
+        `GitHub delivery already ${delivery.pr.state}; inspect delivery ${delivery.id}, do not recreate PR`,
+      );
+    return {
+      provider: options.config ? 'repository-command' : 'github-cli',
+      disposition: 'reused',
+      remoteVerified: true,
+      pullRequest: {
+        number: delivery.pr.number,
+        url: delivery.pr.url,
+        baseBranch: delivery.binding.base,
+        headBranch: delivery.binding.head,
+        headSha: delivery.pr.sha,
+        state: 'OPEN',
+      },
+    };
+  }
   const existingPullRequest = observeNativePullRequest(options);
   if (!options.config) {
     return createWithGithubFill({ ...options, existingPullRequest });

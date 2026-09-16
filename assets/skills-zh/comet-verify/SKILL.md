@@ -5,6 +5,10 @@ description: "Comet Classic 阶段 4 —— 验证 change、记录证据并驱�
 
 # Comet 阶段 4：验证（Verify）
 
+## GitHub 交付接入
+
+已绑定 GitHub 交付时，按 `comet-classic/reference/github-delivery.md` 记录逐 AC 验证证据和独立 review。review_mode: off 不豁免正式 PR 的交付审查；不得把未执行项记为通过。
+
 开始或恢复前必须先读取并执行 `comet-classic/reference/classic-layout.md`；本文件中的 OpenSpec CLI 调用必须使用 adapter，文件路径必须使用该协议绑定的 `<classic-*>` 逻辑根。
 
 ## 前置条件

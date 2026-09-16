@@ -5,6 +5,10 @@ description: 'Comet Classic 阶段 2 —— 为 change 产出深度技术 Design
 
 # Comet 阶段 2：深度设计（Design）
 
+## GitHub 交付接入
+
+设计改变验收范围时，已绑定 GitHub 的 change 按 `comet-classic/reference/github-delivery.md` 同步 scope 和 issue；变更确认依据与稳定 AC 编号必须保留。
+
 开始或恢复前必须先读取并执行 `comet-classic/reference/classic-layout.md`；本文件中的 OpenSpec CLI 调用必须使用 adapter，文件路径必须使用该协议绑定的 `<classic-*>` 逻辑根。
 
 ## 前置条件

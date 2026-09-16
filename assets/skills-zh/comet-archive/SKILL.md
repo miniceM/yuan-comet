@@ -5,6 +5,10 @@ description: "Comet Classic 阶段 5 —— 确认归档、合并 delta spec 并
 
 # Comet 阶段 5：归档（Archive）
 
+## GitHub 交付接入
+
+已绑定 GitHub 交付时，按 `comet-classic/reference/github-delivery.md` 完成归档提交后的验证与审查，再用 delivery push/pr 替代直接推送/创建 PR；失败从 delivery observe 恢复，不重新归档。
+
 开始或恢复前必须先读取并执行 `comet-classic/reference/classic-layout.md`；本文件中的 OpenSpec CLI 调用必须使用 adapter，文件路径必须使用该协议绑定的 `<classic-*>` 逻辑根。
 
 ## 前置条件

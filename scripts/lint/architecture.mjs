@@ -150,6 +150,20 @@ if (exists('test/ts')) {
 
 assertArrayEquals('app modules', directoryNames('app'), layout.appModules);
 assertArrayEquals('domain modules', directoryNames('domains'), layout.domainModules);
+// The shared delivery domain must remain independent of workflow state machines.
+for (const file of walkFiles('domains/github-delivery')) {
+  if (!/\.ts$/.test(file)) continue;
+  const source = readFileSync(path.join(root, file), 'utf8');
+  if (/from\s+['"][^'"]*comet-(classic|native)[^'"]*['"]/.test(source)) {
+    fail(`${file} must not depend on Classic or Native runtime`);
+  }
+}
+if (
+  layout.domainModules.includes('github-delivery') &&
+  !isDirectory('test/domains/github-delivery')
+)
+  fail('github-delivery requires its domain test directory');
+
 assertArrayEquals('platform modules', directoryNames('platform'), layout.platformModules);
 
 for (const scriptModule of directoryNames('scripts')) {
