@@ -26,6 +26,8 @@ import {
   prBody,
 } from './pull-request-renderer.js';
 
+class OperationPreconditionError extends Error {}
+
 export class GithubDelivery {
   readonly store: DeliveryStore;
   constructor(
@@ -141,11 +143,11 @@ export class GithubDelivery {
     body: (id: string) => string,
   ): Operation {
     const pending = record.operations.find(
-      (o) => o.kind === kind && (o.status === 'prepared' || o.status === 'uncertain'),
+      (o) => o.status === 'prepared' || o.status === 'uncertain',
     );
     requireCondition(
       !pending,
-      `Uncertain ${kind}; use observe to reconcile operation ${pending?.id} before retry`,
+      `Pending ${pending?.kind}; use observe to reconcile operation ${pending?.id} before ${kind}`,
     );
     const id = randomUUID();
     const op: Operation = { id, kind, body: body(id), head: head(this.root), status: 'prepared' };
@@ -154,6 +156,7 @@ export class GithubDelivery {
     return op;
   }
   private static isDefinitelyNotApplied(error: unknown): boolean {
+    if (error instanceof OperationPreconditionError) return true;
     if (error instanceof GithubOperationError) return error.definitelyNotApplied;
     if (error instanceof GitCommandError) {
       return /permission denied|authentication|could not read|non-fast-forward|rejected|denied/i.test(
@@ -344,6 +347,13 @@ export class GithubDelivery {
   }
   push(id: string, resolution: 'full' | 'partial'): DeliveryRecord {
     return this.mutation(id, (record, client) => {
+      const pending = record.operations.find(
+        (operation) => operation.status === 'prepared' || operation.status === 'uncertain',
+      );
+      requireCondition(
+        !pending,
+        `Pending ${pending?.kind}; use observe to reconcile operation ${pending?.id} before push`,
+      );
       preflight(this.root, record, resolution, 'push');
       const priorPr = record.operations
         .slice()
@@ -534,11 +544,17 @@ export class GithubDelivery {
     );
     const previous = this.latestPrBodyOperation(record, remote.number);
     requireCondition(previous, 'Missing PR body operation history');
+    requireCondition(
+      remote.body === previous.body,
+      'PR body changed since the last Comet update; reconcile the human edit before refreshing evidence',
+    );
     const currentBody = prBody(record, previous.id, resolution);
     if (remote.body === currentBody) return;
+    preflight(this.root, record, resolution, 'pull-request:update');
     const op = this.prepared(record, 'pull-request:update', (operation) =>
       prBody(record, operation, resolution),
     );
+    op.expectedBodyHash = hash(remote.body ?? '');
     op.remoteRef = remote.number;
     op.resolution = resolution;
     this.store.save(record);
@@ -547,8 +563,12 @@ export class GithubDelivery {
       op,
       () => {
         assertRepositoryBinding(this.root, record.binding);
-        preflight(this.root, record, resolution);
+        preflight(this.root, record, resolution, 'pull-request:update');
         assertPushed(this.root, record);
+        if (hash(client.pr(remote.number).body ?? '') !== op.expectedBodyHash)
+          throw new OperationPreconditionError(
+            'Concurrent PR body edit detected; re-read and reconcile before refreshing evidence',
+          );
         client.updatePr(remote.number, op.body);
       },
       () => this.reconcilePrUpdate(record, client, op),
@@ -589,7 +609,6 @@ export class GithubDelivery {
           'PR create uncertain; observe only',
         );
         if (record.pr?.state === 'open') {
-          preflight(this.root, record, prior.resolution ?? resolution);
           this.updateOpenPr(record, client, resolution);
           return record;
         }

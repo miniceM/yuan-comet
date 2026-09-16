@@ -60,7 +60,7 @@ Record an existing authorization:
 comet delivery grant --path <project-root> --id <delivery-id> --input <grant.json> --json
 ```
 
-grant.json: `{"action":"issue:create","source":"reference to explicit user authorization"}`. Supported actions: issue:create, issue:update, push, pull-request:create. Bind an issue before granting issue:update; the grant applies only to that issue. Agent assumptions or decisions are not user authorization.
+grant.json: `{"action":"issue:create","source":"reference to explicit user authorization"}`. Supported actions: issue:create, issue:update, push, pull-request:create, pull-request:update. Bind an issue before granting issue:update; the grant applies only to that issue. Bind a PR before granting pull-request:update; the grant applies only to that PR number, so a replacement PR requires a new grant. Agent assumptions or decisions are not user authorization.
 
 ```bash
 comet delivery issue --path <project-root> --id <delivery-id> --json
@@ -127,8 +127,8 @@ comet delivery pr --path <project-root> --id <delivery-id> --resolution full --j
 comet delivery observe --path <project-root> --id <delivery-id> --json
 ```
 
-Use resolution=partial for partial delivery: the PR uses Related to and keeps the issue open. Only full uses Closes. PR creation never automatically merges. CI is Pending in the body, not a passed local check.
+Use resolution=partial for partial delivery: the PR uses Related to and keeps the issue open. Only full uses Closes. PR creation never automatically merges. CI is Pending in the body, not a passed local check. After a new HEAD is verified, reviewed, and pushed to an open PR, refreshing its final evidence requires pull-request:update authorization. If the remote body no longer matches the last body written by Comet, stop and reconcile the human edit instead of overwriting reviewer content.
 
-For uncertain creation failures such as timeouts, connection loss, or a lost response, use observe before any retry. Do not repeat archive/commit or directly run gh create; an empty query is not permission to create again. Failures that definitely performed no write, such as missing gh, no login, denied permission, or an unavailable repository, are recorded as failed and may be retried under the existing authorization after fixing the prerequisite. Closed and merged PRs are still existing remote results; every state must retain the original verified/reviewed SHA, record any observed drift, and block completion.
+For any uncertain remote operation such as a timeout, connection loss, or lost response, use observe before any retry. A prepared or uncertain mutation blocks push and every later remote mutation. Do not repeat archive/commit or directly run gh create; an empty query is not permission to create again. Failures that definitely performed no write, such as missing gh, no login, denied permission, an unavailable repository, or a concurrent body edit detected before the write, are recorded as failed and may be retried under the existing authorization after fixing the prerequisite. Closed and merged PRs are still existing remote results; every state must retain the original verified/reviewed SHA, record any observed drift, and block completion.
 
 The GitHub CLI provider currently supports same-repository branches on github.com with HTTPS or SSH remotes, not cross-fork heads or GitHub Enterprise hostnames. Unbound Native repository-command behavior remains compatible. Bound providers retain the existing input envelope and receive an additional delivery object with schema=comet.github-delivery.provider.v1 and repository/base/head/headSha/title/body. They must use the prepared body unchanged; gh independently verifies the result. Confirm that the custom provider handles this payload before enabling it.

@@ -60,7 +60,7 @@ Native 使用 workflow=native，internalRef 沿用真实 acceptance ID；公开 
 comet delivery grant --path <project-root> --id <delivery-id> --input <grant.json> --json
 ```
 
-grant.json：`{"action":"issue:create","source":"用户明确授权的会话引用"}`。合法 action 为 issue:create、issue:update、push、pull-request:create；issue:update 必须先绑定 issue，并只适用于该 issue。不要把推测或 Agent 自己的决定当作授权。
+grant.json：`{"action":"issue:create","source":"用户明确授权的会话引用"}`。合法 action 为 issue:create、issue:update、push、pull-request:create、pull-request:update；issue:update 必须先绑定 issue，并只适用于该 issue；pull-request:update 必须先绑定 PR，并只适用于该 PR 编号，replacement PR 需重新授权。不要把推测或 Agent 自己的决定当作授权。
 
 ```bash
 comet delivery issue --path <project-root> --id <delivery-id> --json
@@ -127,8 +127,8 @@ comet delivery pr --path <project-root> --id <delivery-id> --resolution full --j
 comet delivery observe --path <project-root> --id <delivery-id> --json
 ```
 
-部分交付改为 resolution=partial，PR 使用 Related to，保留 issue；full 才使用 Closes。创建 PR 不自动合并。CI 在 PR 正文中标记 Pending，不当作本地已通过。
+部分交付改为 resolution=partial，PR 使用 Related to，保留 issue；full 才使用 Closes。创建 PR 不自动合并。CI 在 PR 正文中标记 Pending，不当作本地已通过。已有 open PR 在新 HEAD 完成 verify/review 并 push 后，需要 pull-request:update 授权才能刷新最终证据；如果远端正文不再等于上一次 Comet 写入内容，停止更新并先人工 reconcile，不能覆盖 Reviewer 修改。
 
-timeout、连接中断或响应丢失等结果不确定的创建失败先 observe，不重新归档、不重复提交或直接再运行 gh create；查询无结果不是重新创建的依据。`gh` 缺失、未登录、权限拒绝或仓库不可用等确定未写入的失败记为 failed，修复前置条件后可沿用原授权重试。已关闭/已合并 PR 也是已创建事实；所有状态都必须保持远端 HEAD 与原 verified/reviewed SHA 一致，漂移时保留原交付 SHA 并阻止完成。
+timeout、连接中断或响应丢失等结果不确定的远程操作先 observe；存在 prepared/uncertain mutation 时不能继续 push 或执行其他远程 mutation。不重新归档、不重复提交或直接再运行 gh create；查询无结果不是重新创建的依据。`gh` 缺失、未登录、权限拒绝、仓库不可用或写入前正文并发变化等确定未写入的失败记为 failed，修复前置条件后可沿用原授权重试。已关闭/已合并 PR 也是已创建事实；所有状态都必须保持远端 HEAD 与原 verified/reviewed SHA 一致，漂移时保留原交付 SHA 并阻止完成。
 
 当前 GitHub CLI provider 支持 github.com 的同仓库分支交付（HTTPS 或 SSH remote），不支持跨 fork head 或 GitHub Enterprise hostname。原有未绑定的 Native repository-command 路径保持兼容；绑定后保留原有 provider 输入结构，并增加 delivery 对象（schema=comet.github-delivery.provider.v1，包含 repository/base/head/headSha/title/body），必须原样使用受审查正文，最终仍由 gh 查询验证。启用前应确认企业自定义命令支持该协议。

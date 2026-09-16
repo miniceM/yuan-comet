@@ -920,7 +920,7 @@ Issue 继续保持 open。
 interface RemoteOperation {
   operationId: string;
 
-  kind: 'issue-create' | 'issue-update' | 'push' | 'pr-create';
+  kind: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create' | 'pull-request:update';
 
   repository: string;
 
@@ -931,8 +931,12 @@ interface RemoteOperation {
   status: 'prepared' | 'completed' | 'uncertain' | 'failed';
 
   remoteRef?: string;
+
+  expectedBodyHash?: string;
 }
 ```
+
+同一 delivery 同时最多存在一个 `prepared` 或 `uncertain` 的远程 mutation。新 mutation 必须先用 `observe` 查询并 reconcile 前一项；尤其不能在 PR 正文更新结果不确定时继续 push 新 HEAD。`pull-request:update` 记录上一次 Comet 写入正文的 hash，真正写入前再次读取远端正文；hash 不一致时按确定未写入失败处理，保留人工修改并要求显式 reconcile。
 
 ## 20. 幂等与恢复
 
@@ -1151,10 +1155,11 @@ remote verification
 
 ```ts
 interface AuthorizationGrant {
-  action: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create';
+  action: 'issue:create' | 'issue:update' | 'push' | 'pull-request:create' | 'pull-request:update';
 
   repository: string;
   issueNumber?: number;
+  prNumber?: number;
   headBranch?: string;
   targetBranch?: string;
 
@@ -1171,6 +1176,7 @@ interface AuthorizationGrant {
 4. 创建 Issue 不表示允许修改任意 Issue。
 5. push 只允许绑定的 branch/repository。
 6. 不把长期 unrestricted GitHub write token 放进 prompt、spec 或日志。
+7. `pull-request:update` 与创建 PR 分开授权，并只适用于授权时绑定的具体 PR 编号；replacement PR 必须重新授权更新。
 
 ## 26. Delivery Preflight
 

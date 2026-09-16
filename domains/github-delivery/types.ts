@@ -1,5 +1,6 @@
 export type Workflow = 'classic' | 'native';
-export type Action = 'issue:create' | 'issue:update' | 'push' | 'pull-request:create';
+export type Action =
+  'issue:create' | 'issue:update' | 'push' | 'pull-request:create' | 'pull-request:update';
 export interface AcceptanceItem {
   key: string;
   internalRef: string;
@@ -73,6 +74,7 @@ export interface Operation {
   status: 'prepared' | 'completed' | 'uncertain' | 'failed';
   head: string;
   body: string;
+  expectedBodyHash?: string;
   remoteRef?: number;
   resolution?: 'full' | 'partial';
 }
@@ -115,7 +117,13 @@ export interface DeliveryRecord {
   } | null;
   verifications: Verification[];
   reviews: Review[];
-  grants: Array<{ action: Action; source: string; grantedAt: string; issueNumber: number | null }>;
+  grants: Array<{
+    action: Action;
+    source: string;
+    grantedAt: string;
+    issueNumber: number | null;
+    prNumber?: number | null;
+  }>;
   operations: Operation[];
   push: { sha: string; observedAt: string } | null;
   pr: {

@@ -840,6 +840,17 @@ describe('GitHub delivery contracts', () => {
     expect(pushed.pr?.sha).toBe(secondSha);
     expect(pushed.pr?.drifted).toBe(false);
 
+    // Creating the PR does not authorize later body edits.
+    expect(() => service.pr(r.id, 'full')).toThrow(
+      'Missing explicit authorization: pull-request:update',
+    );
+    expect(client.prUpdates).toBe(0);
+    const granted = service.local(r.id, 'grant', {
+      action: 'pull-request:update',
+      source: 'user:refresh-final-evidence',
+    });
+    expect(granted.grants.at(-1)?.prNumber).toBe(created.pr?.number);
+
     // Re-running PR delivery refreshes the body for the final reviewed commit.
     client.loseResponse = true;
     const updated = service.pr(r.id, 'full');
@@ -865,6 +876,10 @@ describe('GitHub delivery contracts', () => {
     const r = ready();
     service.push(r.id, 'full');
     service.pr(r.id, 'full');
+    service.local(r.id, 'grant', {
+      action: 'pull-request:update',
+      source: 'user:refresh-final-evidence',
+    });
     writeFileSync(path.join(root, 'follow-up.txt'), 'follow-up');
     command('add', '.');
     command('commit', '-qm', 'follow-up');
@@ -884,18 +899,99 @@ describe('GitHub delivery contracts', () => {
       .operations.find((operation) => operation.kind === 'pull-request:update');
     expect(uncertain?.status).toBe('uncertain');
 
+    writeFileSync(path.join(root, 'next-fix.txt'), 'next fix');
+    command('add', '.');
+    command('commit', '-qm', 'next fix');
+    const nextSha = currentHead();
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: service.store.read(r.id).reviews.at(-1)!.id,
+      base: service.store.read(r.id).reviews.at(-1)!.head,
+    });
+    expect(() => service.push(r.id, 'full')).toThrow('Pending pull-request:update');
+    expect(remoteSha).not.toBe(nextSha);
+
     client.prRows[0].body = uncertain!.body;
     const observed = service.observe(r.id);
     expect(observed.operations.find((operation) => operation.id === uncertain!.id)?.status).toBe(
       'completed',
     );
     expect(update).toHaveBeenCalledTimes(1);
+
+    service.push(r.id, 'full');
+    service.pr(r.id, 'full');
+    expect(remoteSha).toBe(nextSha);
+    expect(client.prRows[0].body).toContain(`Local evidence recorded for ${nextSha}.`);
+  });
+  it('preserves human PR body edits instead of overwriting them during evidence refresh', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    service.pr(r.id, 'full');
+    service.local(r.id, 'grant', {
+      action: 'pull-request:update',
+      source: 'user:refresh-final-evidence',
+    });
+    writeFileSync(path.join(root, 'body-refresh.txt'), 'body refresh');
+    command('add', '.');
+    command('commit', '-qm', 'body refresh');
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+    });
+    service.push(r.id, 'full');
+    client.prRows[0].body += '\nReviewer migration note\n';
+
+    expect(() => service.pr(r.id, 'full')).toThrow('PR body changed since the last Comet update');
+    expect(client.prUpdates).toBe(0);
+    expect(client.prRows[0].body).toContain('Reviewer migration note');
+  });
+  it('detects a concurrent PR body edit immediately before the update write', () => {
+    const r = ready();
+    service.push(r.id, 'full');
+    service.pr(r.id, 'full');
+    service.local(r.id, 'grant', {
+      action: 'pull-request:update',
+      source: 'user:refresh-final-evidence',
+    });
+    writeFileSync(path.join(root, 'racing-refresh.txt'), 'racing refresh');
+    command('add', '.');
+    command('commit', '-qm', 'racing refresh');
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: r.reviews.at(-1)!.id,
+      base: r.reviews.at(-1)!.head,
+    });
+    service.push(r.id, 'full');
+
+    const originalPr = client.pr.bind(client);
+    let reads = 0;
+    vi.spyOn(client, 'pr').mockImplementation((number) => {
+      reads++;
+      if (reads === 3) client.prRows[0].body += '\nConcurrent reviewer note\n';
+      return originalPr(number);
+    });
+
+    expect(() => service.pr(r.id, 'full')).toThrow('Concurrent PR body edit detected');
+    expect(client.prUpdates).toBe(0);
+    expect(
+      service.store
+        .read(r.id)
+        .operations.find((operation) => operation.kind === 'pull-request:update')?.status,
+    ).toBe('failed');
   });
   it('allows creating a replacement PR after a prior PR was closed-unmerged', () => {
     const r = ready();
     service.push(r.id, 'full');
     const created = service.pr(r.id, 'full');
     expect(created.pr?.number).toBe(1);
+    service.local(r.id, 'grant', {
+      action: 'pull-request:update',
+      source: 'user:update-pr-1',
+    });
 
     // PR1 is closed unmerged on GitHub
     client.prRows[0].state = 'closed';
@@ -925,6 +1021,26 @@ describe('GitHub delivery contracts', () => {
     expect(replacement.pr?.state).toBe('open');
     expect(replacement.pr?.sha).toBe(newHead);
     expect(replacement.issueClosure).toBe('pending');
+
+    writeFileSync(path.join(root, 'replacement-follow-up.txt'), 'replacement follow-up');
+    command('add', '.');
+    command('commit', '-qm', 'replacement follow-up');
+    verify(r);
+    review(r, {
+      kind: 'delta',
+      parent: service.store.read(r.id).reviews.at(-1)!.id,
+      base: service.store.read(r.id).reviews.at(-1)!.head,
+    });
+    service.push(r.id, 'full');
+    expect(() => service.pr(r.id, 'full')).toThrow(
+      'Missing explicit authorization: pull-request:update',
+    );
+    const reauthorized = service.local(r.id, 'grant', {
+      action: 'pull-request:update',
+      source: 'user:update-pr-2',
+    });
+    expect(reauthorized.grants.at(-1)?.prNumber).toBe(2);
+    expect(() => service.pr(r.id, 'full')).not.toThrow();
   });
   it('persists scopeConfirmation and confirmedBodyHash when binding existing issue and preserves them on observe', () => {
     const r = bind();

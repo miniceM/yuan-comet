@@ -63,7 +63,7 @@ export function preflight(
   root: string,
   record: DeliveryRecord,
   resolution: 'full' | 'partial' = 'full',
-  action: 'push' | 'pull-request:create' = 'pull-request:create',
+  action: 'push' | 'pull-request:create' | 'pull-request:update' = 'pull-request:create',
 ): void {
   assertBinding(root, record);
   assertRemoteBaseline(root, record);
@@ -87,7 +87,7 @@ export function preflight(
   assertSources(root, record);
   assertReview(root, record);
   authorize(record, 'push');
-  if (action === 'pull-request:create') authorize(record, 'pull-request:create');
+  if (action !== 'push') authorize(record, action);
 }
 export function remoteHead(root: string, record: DeliveryRecord): string | null {
   const result = runGitCommand(root, [
